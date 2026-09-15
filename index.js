@@ -27,7 +27,7 @@ app.get("/configure", (req, res) => {
   </head>
   <body>
     <div class="card">
-      <h2>⚙️ TorBox Usenet Direct</h2>
+      <h2>⚡ TorBox Usenet Direct</h2>
       <label>مفتاح TorBox API Key:</label>
       <input type="text" id="torboxKey" placeholder="أدخل المفتاح هنا">
       <button onclick="install()">تثبيت الإضافة في Stremio</button>
@@ -52,10 +52,10 @@ app.get("/configure", (req, res) => {
 // 2. ملف التعريف Manifest
 app.get("/:tbKey/manifest.json", (req, res) => {
   res.json({
-    id: "org.my.torbox.usenet.direct",
-    version: "1.4.0",
-    name: "TorBox Usenet Finder",
-    description: "جلب روابط Usenet & NZB المباشرة عبر TorBox",
+    id: "org.my.torbox.usenet.v2",
+    version: "2.0.0",
+    name: "TorBox Usenet Direct",
+    description: "مصدر Usenet و NZB المباشر عبر TorBox Pro",
     resources: ["stream"],
     types: ["movie", "series"],
     idPrefixes: ["tt"],
@@ -63,41 +63,48 @@ app.get("/:tbKey/manifest.json", (req, res) => {
   });
 });
 
-// 3. جلب الروابط من Usenet
+// 3. معالج البحث والجلب من شبكة Usenet
 app.get("/:tbKey/stream/:type/:id.json", async (req, res) => {
   try {
     const tbKey = req.params.tbKey;
     const streams = [];
-    const imdbId = req.params.id.split(":")[0];
+    const parts = req.params.id.split(":");
+    const imdbId = parts[0];
 
     if (tbKey) {
-      // جلب اسم العنوان عبر Cinemeta
+      // 1. جلب عنوان الفيلم/المسلسل من Cinemeta
       const metaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${req.params.type}/${imdbId}.json`);
       const meta = metaRes.data?.meta;
 
       if (meta && meta.name) {
-        let searchQuery = meta.name;
-        
-        if (req.params.type === "series" && req.params.id.includes(":")) {
-          const parts = req.params.id.split(":");
+        let query = meta.name;
+        if (req.params.type === "series" && parts.length >= 3) {
           const season = String(parts[1]).padStart(2, '0');
           const episode = String(parts[2]).padStart(2, '0');
-          searchQuery += ` S${season}E${episode}`;
+          query += ` S${season}E${episode}`;
         }
 
-        // البحث في Usenet عبر TorBox
-        const searchRes = await axios.get(`https://api.torbox.app/v1/api/usenet/search?query=${encodeURIComponent(searchQuery)}`, {
-          headers: { Authorization: `Bearer ${tbKey}` }
-        });
+        // 2. الاستعلام عبر محرك Usenet NZB المفتوح
+        const searchUrl = `https://nzbindex.com/rss/?q=${encodeURIComponent(query)}&sort=age`;
+        const nzbSearch = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`, { timeout: 4000 }).catch(() => null);
 
-        if (searchRes.data?.success && Array.isArray(searchRes.data?.data)) {
-          for (const result of searchRes.data.data.slice(0, 10)) {
-            const sizeGB = result.size ? (result.size / (1024 ** 3)).toFixed(2) : "N/A";
-            streams.push({
-              name: "⚡ TorBox Usenet",
-              title: `🌐 ${result.name || result.title}\n💾 الحجم: ${sizeGB} GB`,
-              url: `https://api.torbox.app/v1/api/usenet/create?token=${tbKey}&link=${encodeURIComponent(result.download_url || result.link)}`
-            });
+        if (nzbSearch && nzbSearch.data) {
+          // استخراج روابط NZB والعناوين من نتائج RSS
+          const items = nzbSearch.data.split("<item>").slice(1, 6);
+          for (const item of items) {
+            const titleMatch = item.match(/<title>(.*?)<\/title>/);
+            const linkMatch = item.match(/<enclosure url="(.*?)"/);
+
+            if (titleMatch && linkMatch) {
+              const rawTitle = titleMatch[1].replace("<![CDATA[", "").replace("]]>", "").trim();
+              const nzbUrl = linkMatch[1];
+
+              streams.push({
+                name: "⚡ TorBox Usenet",
+                title: `🌐 Usenet NZB\n📁 ${rawTitle}`,
+                url: `https://api.torbox.app/v1/api/usenet/create?token=${tbKey}&link=${encodeURIComponent(nzbUrl)}`
+              });
+            }
           }
         }
       }
@@ -105,11 +112,10 @@ app.get("/:tbKey/stream/:type/:id.json", async (req, res) => {
 
     res.json({ streams });
   } catch (error) {
-    console.error("Usenet Stream error:", error.message);
+    console.error("Usenet Error:", error.message);
     res.json({ streams: [] });
   }
 });
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
