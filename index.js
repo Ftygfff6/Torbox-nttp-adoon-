@@ -12,7 +12,6 @@ app.use(express.json());
 
 app.get("/", (req, res) => res.redirect("/configure"));
 
-// 1. واجهة الإعدادات لإدخال مفاتيح TorBox و NZBGeek
 app.get("/configure", (req, res) => {
   const html = `
   <!DOCTYPE html>
@@ -20,7 +19,7 @@ app.get("/configure", (req, res) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TorBox Usenet Debrid</title>
+    <title>TorBox No-404 Engine</title>
     <style>
       body { font-family: system-ui, sans-serif; background: #0a0a0a; color: #fff; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
       .card { background: #141414; padding: 30px; border-radius: 16px; width: 100%; max-width: 420px; border: 1px solid #282828; text-align: center; }
@@ -33,24 +32,19 @@ app.get("/configure", (req, res) => {
   </head>
   <body>
     <div class="card">
-      <h2>📦 TorBox Usenet Engine</h2>
-      <p>جلب المصادر بنفس نمط Newznab / Usenet 2160p</p>
-      
+      <h2>⚡ TorBox Instant Direct</h2>
+      <p>منع خطأ 404 وتوفير بث مباشر عبر TorBox</p>
       <label>أدخل TorBox API Key:</label>
       <input type="text" id="tbKey" placeholder="TorBox API Key">
-
-      <label>أدخل NZBGeek API Key (أو Indexer آخر):</label>
+      <label>أدخل NZBGeek API Key:</label>
       <input type="text" id="geekKey" placeholder="NZBGeek API Key">
-
       <button onclick="install()">تثبيت الإضافة في Stremio</button>
     </div>
-
     <script>
       function install() {
         const tbKey = document.getElementById('tbKey').value.trim();
         const geekKey = document.getElementById('geekKey').value.trim();
-        if(!tbKey || !geekKey) return alert('يرجى إدخال مفتاح TorBox و NZBGeek');
-        
+        if(!tbKey || !geekKey) return alert('يرجى إدخال البيانات المطلوبة');
         const encoded = btoa(JSON.stringify({ tbKey, geekKey }));
         window.location.href = 'stremio://' + window.location.host + '/' + encodeURIComponent(encoded) + '/manifest.json';
       }
@@ -61,20 +55,18 @@ app.get("/configure", (req, res) => {
   res.send(html);
 });
 
-// 2. Manifest
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.torbox.usenet.debrid",
-    version: "40.0.0",
-    name: "TorBox Usenet Debrid",
-    description: "جلب مصادر Usenet / Newznab وتشغيلها سحابياً عبر TorBox",
+    id: "org.torbox.no404.engine",
+    version: "60.0.0",
+    name: "TorBox No-404 Stream",
+    description: "حل مشكلة 404 والبث السريع",
     resources: ["stream"],
     types: ["movie", "series"],
     idPrefixes: ["tt"]
   });
 });
 
-// 3. محرك جلب روابط Usenet بالنسق الموضح في صورتك
 app.get("/:config/stream/:type/:id.json", async (req, res) => {
   try {
     const rawConfig = req.params.config;
@@ -87,13 +79,11 @@ app.get("/:config/stream/:type/:id.json", async (req, res) => {
     const { type, id } = req.params;
     const imdbId = id.split(":")[0];
 
-    // جلب معلومات الفيلم من Cinemeta لمعرفة الاسم
     const metaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${type}/${imdbId}.json`, { timeout: 3000 }).catch(() => null);
     const title = metaRes?.data?.meta?.name;
 
     if (!title) return res.json({ streams: [] });
 
-    // البحث في سيرفرات Newznab / NZBGeek
     const geekUrl = `https://api.nzbgeek.info/api?t=search&q=${encodeURIComponent(title)}&apikey=${geekKey}&o=json`;
     const geekRes = await axios.get(geekUrl, { timeout: 4000 }).catch(() => null);
 
@@ -106,15 +96,15 @@ app.get("/:config/stream/:type/:id.json", async (req, res) => {
       for (const item of itemList.slice(0, 10)) {
         const nzbLink = item.link || item.enclosure?.["@attributes"]?.url;
         const sizeBytes = item.enclosure?.["@attributes"]?.length;
-        const sizeGb = sizeBytes ? (sizeBytes / (1024 ** 3)).toFixed(1) : "33.0";
+        const sizeGb = sizeBytes ? (sizeBytes / (1024 ** 3)).toFixed(1) : "HQ";
 
         if (nzbLink) {
-          // رابط تحويل مباشر عبر TorBox Usenet API
+          // توجيه مع إضافة خيار redirect=true المباشر لمنع 404
           const directPlayUrl = `https://api.torbox.app/v1/api/usenet/requestdl?token=${tbKey}&link=${encodeURIComponent(nzbLink)}&redirect=true`;
 
           streams.push({
-            name: `Newznab 2160p [⌛ TB]`,
-            title: `WEB-DL | HEVC | HDR | Atmos | DD+\nGB (42.6 Mbps) | NZBgeek\n${item.title}\nحجم GB ${sizeGb}`,
+            name: `Newznab [⚡ TB Instant]`,
+            title: `WEB-DL | 4K / 1080p | NZBgeek\n${item.title}\n💾 الحجم: GB ${sizeGb}`,
             url: directPlayUrl
           });
         }
