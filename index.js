@@ -10,7 +10,7 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-// 1. واجهة الإعدادات
+// 1. واجهة الإعدادات لإدخال مفاتيح API
 app.get("/configure", (req, res) => {
   const html = `
   <!DOCTYPE html>
@@ -18,46 +18,31 @@ app.get("/configure", (req, res) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>إعدادات TorBox Usenet Direct</title>
+    <title>TorBox Dual-Engine (Torrent + Usenet)</title>
     <style>
-      body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #fff; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-      .card { background: #1a1a1a; padding: 25px; border-radius: 12px; width: 100%; max-width: 440px; border: 1px solid #2a2a2a; }
+      body { font-family: system-ui, -apple-system, sans-serif; background: #0f0f0f; color: #fff; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+      .card { background: #1a1a1a; padding: 25px; border-radius: 12px; width: 100%; max-width: 440px; border: 1px solid #2a2a2a; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
       h2 { color: #e50914; margin-bottom: 5px; text-align: center; font-size: 20px; }
       p.sub { font-size: 12px; color: #aaa; text-align: center; margin-bottom: 20px; }
       .section-title { font-size: 13px; color: #e50914; font-weight: bold; margin-top: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; text-align: right; }
       label { display: block; text-align: right; margin-top: 10px; font-weight: 600; font-size: 12px; color: #ccc; }
-      input[type="text"], input[type="password"] { width: 100%; padding: 10px; margin-top: 4px; border-radius: 6px; border: 1px solid #333; background: #242424; color: #fff; box-sizing: border-box; outline: none; font-size: 13px; }
+      input[type="text"] { width: 100%; padding: 10px; margin-top: 4px; border-radius: 6px; border: 1px solid #333; background: #242424; color: #fff; box-sizing: border-box; outline: none; font-size: 13px; }
       button { width: 100%; margin-top: 25px; padding: 12px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; }
       button:hover { background: #b80710; }
     </style>
   </head>
   <body>
     <div class="card">
-      <h2>🌐 TorBox NNTP Full Server</h2>
-      <p class="sub">إعداد استضافة Usenet المباشرة وتثبيتها في Stremio</p>
+      <h2>🚀 TorBox Dual-Engine</h2>
+      <p class="sub">إضافة Stremio لمصادر التورنت واليوزنت عبر سحابة TorBox</p>
 
-      <div class="section-title">🔑 المفاتيح الأساسية (API Keys)</div>
+      <div class="section-title">🔑 بيانات TorBox الرئيسية</div>
       <label>TorBox API Key:</label>
-      <input type="text" id="tbKey" placeholder="أدخل TorBox API Key">
+      <input type="text" id="tbKey" placeholder="أدخل TorBox API Key الخاص بك">
 
+      <div class="section-title">⚡ بيانات محرك Usenet</div>
       <label>NZBGeek API Key:</label>
       <input type="text" id="geekKey" placeholder="أدخل NZBGeek API Key">
-
-      <div class="section-title">⚡ بيانات اتصال سيرفر NNTP</div>
-      <label>Host:</label>
-      <input type="text" id="host" value="nntp.torbox.app">
-
-      <label>Port:</label>
-      <input type="text" id="port" value="563">
-
-      <label>Username:</label>
-      <input type="text" id="username" placeholder="اسم المستخدم">
-
-      <label>Password:</label>
-      <input type="password" id="password" placeholder="كلمة المرور">
-
-      <label>Connections:</label>
-      <input type="text" id="connections" value="10">
 
       <button onclick="install()">تثبيت الإضافة في Stremio</button>
     </div>
@@ -66,16 +51,10 @@ app.get("/configure", (req, res) => {
       function install() {
         const tbKey = document.getElementById('tbKey').value.trim();
         const geekKey = document.getElementById('geekKey').value.trim();
-        const host = document.getElementById('host').value.trim();
-        const port = document.getElementById('port').value.trim();
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value.trim();
-        const connections = document.getElementById('connections').value.trim();
 
         if(!tbKey) { alert('يرجى إدخال مفتاح TorBox API Key'); return; }
-        if(!geekKey) { alert('يرجى إدخال مفتاح NZBGeek API Key'); return; }
 
-        const configData = { tbKey, geekKey, host, port, username, password, connections };
+        const configData = { tbKey, geekKey };
         const encodedConfig = btoa(JSON.stringify(configData));
 
         const manifestUrl = window.location.origin + '/' + encodeURIComponent(encodedConfig) + '/manifest.json';
@@ -92,10 +71,10 @@ app.get("/configure", (req, res) => {
 // 2. ملف Manifest
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.torbox.nntp.player",
-    version: "3.1.0",
-    name: "TorBox NNTP Streamer",
-    description: "تشغيل ملفات Usenet مباشرة عبر TorBox",
+    id: "org.torbox.dualengine.addon",
+    version: "7.0.0",
+    name: "TorBox (Torrent + Usenet)",
+    description: "توفر نسخ التورنت واليوزنت جنبًا إلى جنب للبث السحابي المباشر",
     resources: ["stream"],
     types: ["movie", "series"],
     idPrefixes: ["tt"],
@@ -103,41 +82,70 @@ app.get("/:config/manifest.json", (req, res) => {
   });
 });
 
-// 3. مسار معالجة التشغيل والتوجيه المباشر
-app.get("/resolve/:tbKey/:nzbUrl", async (req, res) => {
+// 3. مشغل روابط التورنت المباشر (Torrent Engine)
+app.get("/play/torrent/:tbKey/:magnet", async (req, res) => {
+  const { tbKey, magnet } = req.params;
+  const decodedMagnet = decodeURIComponent(magnet);
+
   try {
-    const { tbKey, nzbUrl } = req.params;
-    const decodedNzb = decodeURIComponent(nzbUrl);
+    const formData = new URLSearchParams();
+    formData.append("magnet", decodedMagnet);
+    formData.append("seed", "1");
 
-    // إضافة NZB إلى حساب TorBox
-    const createRes = await axios.post("https://api.torbox.app/v1/api/usenet/createusenet", 
-      new URLSearchParams({ link: decodedNzb }),
-      { headers: { Authorization: `Bearer ${tbKey}` } }
-    ).catch(() => null);
+    const createRes = await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", formData, {
+      headers: { "Authorization": `Bearer ${tbKey}`, "Content-Type": "application/x-www-form-urlencoded" }
+    });
 
-    if (createRes?.data?.detail?.id) {
-      const usenetId = createRes.data.detail.id;
-      // جلب رابط التحميل المباشر للفيلم/الحلقة
-      const infoRes = await axios.get(`https://api.torbox.app/v1/api/usenet/mylist?id=${usenetId}`, {
-        headers: { Authorization: `Bearer ${tbKey}` }
-      });
+    const torrentId = createRes.data?.detail?.id || createRes.data?.data?.torrent_id;
 
-      const files = infoRes.data?.data?.files;
-      if (files && files.length > 0) {
-        // اختيار أضخم ملف فيديو داخل NZB
-        const videoFile = files.sort((a, b) => b.size - a.size)[0];
-        const downloadUrl = `https://api.torbox.app/v1/api/usenet/requestdl?token=${tbKey}&usenet_id=${usenetId}&file_id=${videoFile.id}`;
-        return res.redirect(302, downloadUrl);
+    if (torrentId) {
+      const dlRes = await axios.get(`https://api.torbox.app/v1/api/torrents/requestdl?token=${tbKey}&torrent_id=${torrentId}&redirect=false`, {
+        headers: { "Authorization": `Bearer ${tbKey}` }
+      }).catch(() => null);
+
+      if (dlRes?.data?.data) {
+        return res.redirect(302, dlRes.data.data);
       }
     }
 
-    res.status(404).send("File not ready or found");
+    return res.redirect(302, `https://api.torbox.app/v1/api/torrents/requestdl?token=${tbKey}&magnet=${encodeURIComponent(decodedMagnet)}`);
   } catch (err) {
-    res.status(500).send("Stream resolution error");
+    return res.redirect(302, `https://api.torbox.app/v1/api/torrents/requestdl?token=${tbKey}&magnet=${encodeURIComponent(decodedMagnet)}`);
   }
 });
 
-// 4. معالج البحث من NZBGeek
+// 4. مشغل روابط اليوزنت المباشر (Usenet Engine)
+app.get("/play/usenet/:tbKey/:nzbUrl", async (req, res) => {
+  const { tbKey, nzbUrl } = req.params;
+  const decodedNzb = decodeURIComponent(nzbUrl);
+
+  try {
+    const formData = new URLSearchParams();
+    formData.append("link", decodedNzb);
+
+    const createRes = await axios.post("https://api.torbox.app/v1/api/usenet/createusenet", formData, {
+      headers: { "Authorization": `Bearer ${tbKey}`, "Content-Type": "application/x-www-form-urlencoded" }
+    });
+
+    const usenetId = createRes.data?.detail?.id || createRes.data?.data?.usenet_id;
+
+    if (usenetId) {
+      const dlRes = await axios.get(`https://api.torbox.app/v1/api/usenet/requestdl?token=${tbKey}&usenet_id=${usenetId}&redirect=false`, {
+        headers: { "Authorization": `Bearer ${tbKey}` }
+      }).catch(() => null);
+
+      if (dlRes?.data?.data) {
+        return res.redirect(302, dlRes.data.data);
+      }
+    }
+
+    return res.redirect(302, `https://api.torbox.app/v1/api/usenet/requestdl?token=${tbKey}&link=${encodeURIComponent(decodedNzb)}`);
+  } catch (err) {
+    return res.redirect(302, `https://api.torbox.app/v1/api/usenet/requestdl?token=${tbKey}&link=${encodeURIComponent(decodedNzb)}`);
+  }
+});
+
+// 5. محرك البحث وتجهيز قائمة المصادر (Torrent vs Usenet)
 app.get("/:config/stream/:type/:id.json", async (req, res) => {
   try {
     const rawConfig = req.params.config;
@@ -149,47 +157,57 @@ app.get("/:config/stream/:type/:id.json", async (req, res) => {
       return res.json({ streams: [] });
     }
 
-    const { tbKey, geekKey, host, connections } = config;
+    const { tbKey, geekKey } = config;
     const streams = [];
-    const parts = req.params.id.split(":");
-    const imdbId = parts[0];
+    const protocol = req.protocol;
+    const hostHeader = req.get("host");
 
+    // القسم الأول: جلب نتائج التورنت (نسخة التورنت)
+    if (tbKey) {
+      const torrentSearchUrl = `https://torrentio.strem.fun/stream/${req.params.type}/${req.params.id}.json`;
+      const torrentRes = await axios.get(torrentSearchUrl, { timeout: 4500 }).catch(() => null);
+
+      if (torrentRes?.data?.streams) {
+        for (const item of torrentRes.data.streams.slice(0, 5)) {
+          if (item.infoHash) {
+            const magnet = `magnet:?xt=urn:btih:${item.infoHash}`;
+            
+            streams.push({
+              name: "🌀 [نسخة تورنت - TorBox]",
+              title: `🚀 تشغيل سحابي سريع\n📦 ${item.title || 'Torrent Stream'}`,
+              url: `${protocol}://${hostHeader}/play/torrent/${tbKey}/${encodeURIComponent(magnet)}`
+            });
+          }
+        }
+      }
+    }
+
+    // القسم الثاني: جلب نتائج اليوزنت من NZBGeek (نسخة اليوزنت)
     if (tbKey && geekKey) {
-      const metaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${req.params.type}/${imdbId}.json`);
-      const meta = metaRes.data?.meta;
+      const parts = req.params.id.split(":");
+      const imdbId = parts[0];
+      const metaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${req.params.type}/${imdbId}.json`).catch(() => null);
+      const meta = metaRes?.data?.meta;
 
       if (meta && meta.name) {
         let searchQuery = meta.name;
         if (req.params.type === "series" && parts.length >= 3) {
-          const season = String(parts[1]).padStart(2, '0');
-          const episode = String(parts[2]).padStart(2, '0');
-          searchQuery += ` S${season}E${episode}`;
+          searchQuery += ` S${String(parts[1]).padStart(2, '0')}E${String(parts[2]).padStart(2, '0')}`;
         }
 
-        const geekApiUrl = `https://api.nzbgeek.info/api?t=search&q=${encodeURIComponent(searchQuery)}&apikey=${geekKey}&o=json`;
-        const geekRes = await axios.get(geekApiUrl, { timeout: 6000 }).catch(() => null);
+        const geekRes = await axios.get(`https://api.nzbgeek.info/api?t=search&q=${encodeURIComponent(searchQuery)}&apikey=${geekKey}&o=json`, { timeout: 4500 }).catch(() => null);
 
         if (geekRes?.data?.channel?.item) {
           const items = Array.isArray(geekRes.data.channel.item) ? geekRes.data.channel.item : [geekRes.data.channel.item];
+          for (const item of items.slice(0, 5)) {
+            const nzbLink = item.link || item.enclosure?.["@attributes"]?.url;
+            let sizeStr = item.enclosure?.["@attributes"]?.length ? `\n💾 ${(item.enclosure["@attributes"].length / (1024 ** 3)).toFixed(2)} GB` : "";
 
-          for (const item of items.slice(0, 8)) {
-            const title = item.title || "NZB Stream";
-            const nzbDownloadLink = item.link || item.enclosure?.["@attributes"]?.url;
-
-            let sizeStr = "";
-            if (item.enclosure?.["@attributes"]?.length) {
-              sizeStr = `\n💾 الحجم: ${(item.enclosure["@attributes"].length / (1024 ** 3)).toFixed(2)} GB`;
-            }
-
-            if (nzbDownloadLink) {
-              const protocol = req.protocol;
-              const hostHeader = req.get("host");
-              const resolveUrl = `${protocol}://${hostHeader}/resolve/${tbKey}/${encodeURIComponent(nzbDownloadLink)}`;
-
+            if (nzbLink) {
               streams.push({
-                name: "⚡ TorBox NNTP",
-                title: `🌐 Host: ${host || 'nntp.torbox.app'} [Conn: ${connections || 10}]\n📦 ${title}${sizeStr}`,
-                url: resolveUrl
+                name: "⚡ [نسخة يوزنت - NZBGeek]",
+                title: `🌐 تشغيل سحابي عبر Usenet\n📦 ${item.title || searchQuery}${sizeStr}`,
+                url: `${protocol}://${hostHeader}/play/usenet/${tbKey}/${encodeURIComponent(nzbLink)}`
               });
             }
           }
