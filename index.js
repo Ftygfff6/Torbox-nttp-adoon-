@@ -1,9 +1,14 @@
 const express = require("express");
 const axios = require("axios");
-const cors = require("cors");
 const app = express();
 
-app.use(cors());
+// تفعيل CORS يدوياً لضمان توافق Stremio
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "*");
+  next();
+});
+
 app.use(express.json());
 
 // 1. صفحة الإعدادات
@@ -21,7 +26,7 @@ app.get("/configure", (req, res) => {
       h2 { color: #e50914; margin-bottom: 20px; }
       label { display: block; text-align: right; margin-top: 15px; font-weight: bold; font-size: 14px; }
       input[type="text"] { width: 100%; padding: 12px; margin-top: 5px; border-radius: 5px; border: 1px solid #333; background: #2b2b2b; color: #fff; box-sizing: border-box; outline: none; }
-      button { width: 100%; margin-top: 25px; padding: 12px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 5px; cursor: pointer; font-size: 16px; transition: 0.2s; }
+      button { width: 100%; margin-top: 25px; padding: 12px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 5px; cursor: pointer; font-size: 16px; }
       button:hover { background: #b80710; }
     </style>
   </head>
@@ -63,7 +68,7 @@ app.get("/:tbKey/manifest.json", (req, res) => {
   });
 });
 
-// 3. معالج البحث والجلب من شبكة Usenet
+// 3. معالج جلب الروابط من شبكة Usenet
 app.get("/:tbKey/stream/:type/:id.json", async (req, res) => {
   try {
     const tbKey = req.params.tbKey;
@@ -72,7 +77,6 @@ app.get("/:tbKey/stream/:type/:id.json", async (req, res) => {
     const imdbId = parts[0];
 
     if (tbKey) {
-      // 1. جلب عنوان الفيلم/المسلسل من Cinemeta
       const metaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${req.params.type}/${imdbId}.json`);
       const meta = metaRes.data?.meta;
 
@@ -84,12 +88,10 @@ app.get("/:tbKey/stream/:type/:id.json", async (req, res) => {
           query += ` S${season}E${episode}`;
         }
 
-        // 2. الاستعلام عبر محرك Usenet NZB المفتوح
         const searchUrl = `https://nzbindex.com/rss/?q=${encodeURIComponent(query)}&sort=age`;
         const nzbSearch = await axios.get(`https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`, { timeout: 4000 }).catch(() => null);
 
         if (nzbSearch && nzbSearch.data) {
-          // استخراج روابط NZB والعناوين من نتائج RSS
           const items = nzbSearch.data.split("<item>").slice(1, 6);
           for (const item of items) {
             const titleMatch = item.match(/<title>(.*?)<\/title>/);
