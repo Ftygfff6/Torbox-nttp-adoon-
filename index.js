@@ -10,12 +10,9 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-// 1. الصفحة الرئيسية والتحويل لصفحة الإعدادات
-app.get("/", (req, res) => {
-  res.redirect("/configure");
-});
+app.get("/", (req, res) => res.redirect("/configure"));
 
-// 2. واجهة إدخال مفتاح TorBox API
+// 1. واجهة الإعدادات
 app.get("/configure", (req, res) => {
   const html = `
   <!DOCTYPE html>
@@ -23,41 +20,30 @@ app.get("/configure", (req, res) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TorBox Torrent Engine</title>
+    <title>TorBox Direct Fix</title>
     <style>
-      body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0a; color: #fff; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-      .card { background: #141414; padding: 30px; border-radius: 16px; width: 100%; max-width: 420px; border: 1px solid #282828; box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
-      h2 { color: #e50914; margin-bottom: 5px; text-align: center; font-size: 22px; font-weight: 800; }
-      p.sub { font-size: 12px; color: #888; text-align: center; margin-bottom: 25px; }
-      label { display: block; text-align: right; margin-top: 15px; font-weight: 600; font-size: 13px; color: #ccc; }
-      input[type="text"] { width: 100%; padding: 12px; margin-top: 6px; border-radius: 8px; border: 1px solid #333; background: #1f1f1f; color: #fff; box-sizing: border-box; outline: none; font-size: 13px; }
-      input[type="text"]:focus { border-color: #e50914; }
-      button { width: 100%; margin-top: 25px; padding: 14px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 15px; }
-      button:hover { background: #b80710; }
+      body { font-family: system-ui, sans-serif; background: #0a0a0a; color: #fff; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+      .card { background: #141414; padding: 30px; border-radius: 16px; width: 100%; max-width: 420px; border: 1px solid #282828; text-align: center; }
+      h2 { color: #e50914; margin-bottom: 10px; }
+      label { display: block; text-align: right; margin-top: 15px; font-size: 13px; color: #ccc; }
+      input[type="text"] { width: 100%; padding: 12px; margin-top: 6px; border-radius: 8px; border: 1px solid #333; background: #1f1f1f; color: #fff; box-sizing: border-box; outline: none; }
+      button { width: 100%; margin-top: 25px; padding: 14px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; }
     </style>
   </head>
   <body>
     <div class="card">
-      <h2>🌀 TorBox Torrent Direct</h2>
-      <p class="sub">إضافة Stremio مخصصة لبث التورنت سحابياً عبر TorBox</p>
-
-      <label>أدخل TorBox API Key الخاص بك:</label>
+      <h2>🚀 TorBox Direct Player</h2>
+      <p style="font-size:12px; color:#888;">إصلاح التشغيل المباشر 100% لتطبيق Stremio</p>
+      <label>أدخل TorBox API Key:</label>
       <input type="text" id="tbKey" placeholder="TorBox API Key">
-
       <button onclick="install()">تثبيت الإضافة في Stremio</button>
     </div>
-
     <script>
       function install() {
         const tbKey = document.getElementById('tbKey').value.trim();
-        if(!tbKey) { alert('يرجى إدخال مفتاح TorBox API Key'); return; }
-
-        const configData = { tbKey };
-        const encodedConfig = btoa(JSON.stringify(configData));
-
-        const manifestUrl = window.location.origin + '/' + encodeURIComponent(encodedConfig) + '/manifest.json';
-        const stremioLink = 'stremio://' + manifestUrl.replace(/^https?:\\/\\//, '');
-        window.location.href = stremioLink;
+        if(!tbKey) return alert('أدخل المفتاح أولاً');
+        const encoded = btoa(JSON.stringify({ tbKey }));
+        window.location.href = 'stremio://' + window.location.host + '/' + encodeURIComponent(encoded) + '/manifest.json';
       }
     </script>
   </body>
@@ -66,89 +52,78 @@ app.get("/configure", (req, res) => {
   res.send(html);
 });
 
-// 3. Manifest الخاص بالتورنت
+// 2. Manifest
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.torbox.torrent.only",
-    version: "1.0.0",
-    name: "TorBox Torrent Direct",
-    description: "بث روابط التورنت المباشرة وسحابية عبر TorBox Debrid",
+    id: "org.torbox.directplayer.fix",
+    version: "12.0.0",
+    name: "TorBox Direct Player",
+    description: "البث المباشر الفوري بدون أخطاء تشغيل",
     resources: ["stream"],
     types: ["movie", "series"],
-    idPrefixes: ["tt"],
-    behaviorHints: { configurable: true, configurationRequired: false }
+    idPrefixes: ["tt"]
   });
 });
 
-// 4. مشغل التورنت المباشر عبر API TorBox (حل مشكلة 404)
-app.get("/play/torrent/:tbKey/:magnet", async (req, res) => {
-  const { tbKey, magnet } = req.params;
-  const decodedMagnet = decodeURIComponent(magnet);
-
+// 3. مشغل البث التلقائي المعالج
+app.get("/play/:tbKey/:hash", async (req, res) => {
+  const { tbKey, hash } = req.params;
+  
   try {
-    const formData = new URLSearchParams();
-    formData.append("magnet", decodedMagnet);
+    // الاستعلام عن قائمة التورنت الموجودة في حسابك بـ TorBox
+    const listRes = await axios.get(`https://api.torbox.app/v1/api/torrents/mylist?token=${tbKey}`, { timeout: 4000 }).catch(() => null);
+    const myTorrents = listRes?.data?.data || [];
+    
+    let target = myTorrents.find(t => t.hash && t.hash.toLowerCase() === hash.toLowerCase());
 
-    // إنشاء التورنت في سحابة TorBox
-    const createRes = await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", formData, {
-      headers: { 
-        "Authorization": `Bearer ${tbKey}`,
-        "Content-Type": "application/x-www-form-urlencoded"
-      }
-    });
-
-    const torrentId = createRes.data?.data?.torrent_id || createRes.data?.detail?.id;
-
-    // طلب رابط التحميل/البث المباشر
-    if (torrentId) {
-      const dlRes = await axios.get(`https://api.torbox.app/v1/api/torrents/requestdl?token=${tbKey}&torrent_id=${torrentId}&redirect=false`, {
-        headers: { "Authorization": `Bearer ${tbKey}` }
+    if (!target) {
+      // إذا لم يكن موجهاً للحساب، يتم إضافته فوراً
+      const formData = new URLSearchParams();
+      formData.append("magnet", `magnet:?xt=urn:btih:${hash}`);
+      const createRes = await axios.post("https://api.torbox.app/v1/api/torrents/createtorrent", formData, {
+        headers: { "Authorization": `Bearer ${tbKey}`, "Content-Type": "application/x-www-form-urlencoded" }
       });
-      if (dlRes.data?.data) return res.redirect(302, dlRes.data.data);
+      target = createRes?.data?.data;
     }
 
-    // محاولة طلب الرابط المباشر في حال كان الملف مضافاً مسبقاً (Cached)
-    const directDl = await axios.get(`https://api.torbox.app/v1/api/torrents/requestdl?token=${tbKey}&magnet=${encodeURIComponent(decodedMagnet)}&redirect=false`, {
-      headers: { "Authorization": `Bearer ${tbKey}` }
-    });
-    if (directDl.data?.data) return res.redirect(302, directDl.data.data);
+    const torrentId = target?.torrent_id || target?.id;
 
-    return res.status(404).send("Torrent is processing on TorBox cloud.");
+    if (torrentId) {
+      const dlRes = await axios.get(`https://api.torbox.app/v1/api/torrents/requestdl?token=${tbKey}&torrent_id=${torrentId}&redirect=false`);
+      if (dlRes?.data?.data) {
+        return res.redirect(302, dlRes.data.data);
+      }
+    }
+
+    return res.status(404).send("الملف جاري معالجته في سحابة TorBox، يرجى المحاولة بعد قليل.");
   } catch (err) {
-    return res.status(500).send("Error playing torrent stream.");
+    return res.status(500).send("خطأ في جلب رابط التشغيل.");
   }
 });
 
-// 5. محرك جلب مصادر التورنت للأفلام والمسلسلات
+// 4. محرك البحث والتشغيل
 app.get("/:config/stream/:type/:id.json", async (req, res) => {
   try {
     const rawConfig = req.params.config;
     let config = {};
-    try {
-      config = JSON.parse(Buffer.from(decodeURIComponent(rawConfig), 'base64').toString('utf-8'));
-    } catch (e) {
-      return res.json({ streams: [] });
-    }
+    try { config = JSON.parse(Buffer.from(decodeURIComponent(rawConfig), 'base64').toString('utf-8')); } catch (e) {}
 
     const { tbKey } = config;
     if (!tbKey) return res.json({ streams: [] });
 
-    const streams = [];
     const protocol = req.protocol;
     const hostHeader = req.get("host");
 
-    // جلب التورنت من Torrentio
     const torrentRes = await axios.get(`https://torrentio.strem.fun/stream/${req.params.type}/${req.params.id}.json`, { timeout: 4000 }).catch(() => null);
+    const streams = [];
 
     if (torrentRes?.data?.streams) {
-      for (const item of torrentRes.data.streams.slice(0, 10)) {
+      for (const item of torrentRes.data.streams.slice(0, 8)) {
         if (item.infoHash) {
-          const magnet = `magnet:?xt=urn:btih:${item.infoHash}`;
-          
           streams.push({
-            name: `🌀 [TorBox Torrent]`,
-            title: `🎬 ${item.title || 'Torrent Stream'}\n🚀 تشغيل سحابي مباشر عبر TorBox`,
-            url: `${protocol}://${hostHeader}/play/torrent/${tbKey}/${encodeURIComponent(magnet)}`
+            name: `🚀 [TorBox Direct]`,
+            title: `🎬 ${item.title || 'Direct Stream'}\n⚡ تشغيل مباشر بدقة عالية`,
+            url: `${protocol}://${hostHeader}/play/${tbKey}/${item.infoHash}`
           });
         }
       }
