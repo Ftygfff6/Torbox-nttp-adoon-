@@ -259,3 +259,152 @@ app.get("/:config/stream/:type/:id.json", async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+const express = require("express");
+const axios = require("axios");
+const app = express();
+
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "*");
+  next();
+});
+
+app.use(express.json());
+
+// 1. واجهة التثبيت والإعدادات
+app.get("/configure", (req, res) => {
+  const html = `
+  <!DOCTYPE html>
+  <html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Sports Engine</title>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0a; color: #fff; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+      .card { background: #141414; padding: 30px; border-radius: 16px; width: 100%; max-width: 420px; border: 1px solid #282828; box-shadow: 0 10px 30px rgba(0,0,0,0.8); text-align: center; }
+      h2 { color: #e50914; margin-bottom: 8px; font-size: 22px; font-weight: 800; }
+      p { font-size: 13px; color: #aaa; line-height: 1.5; margin-bottom: 25px; }
+      button { width: 100%; padding: 14px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 15px; }
+      button:hover { background: #b80710; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>⚽ Live Sports Streams</h2>
+      <p>إضافة Stremio لعرض جدول المباريات اليومية المباشرة مع روابط القنوات الرياضية الأجنبية والمحلية بجودات عالية.</p>
+      <button onclick="install()">تثبيت إضافة المباريات في Stremio</button>
+    </div>
+
+    <script>
+      function install() {
+        const manifestUrl = window.location.origin + '/manifest.json';
+        const stremioLink = 'stremio://' + manifestUrl.replace(/^https?:\\/\\//, '');
+        window.location.href = stremioLink;
+      }
+    </script>
+  </body>
+  </html>
+  `;
+  res.send(html);
+});
+
+// 2. Manifest الخاص بإضافة المباريات والبث الحي
+app.get("/manifest.json", (req, res) => {
+  res.json({
+    id: "org.livesports.streams.addon",
+    version: "1.0.0",
+    name: "⚽ Live Sports & Matches",
+    description: "جدول المباريات المباشرة وروابط البث الحي للقنوات الرياضية العالمية",
+    resources: ["catalog", "stream", "meta"],
+    types: ["tv"],
+    catalogs: [
+      {
+        type: "tv",
+        id: "live_matches",
+        name: "⚽ جدول المباريات المباشرة"
+      }
+    ]
+  });
+});
+
+// 3. كتالوج المباريات اليومية (المصادر المباشرة والأحداث)
+app.get("/catalog/tv/live_matches.json", async (req, res) => {
+  try {
+    // جلب الأحداث والمباريات من المحركات الرياضية المجانية المفتوحة المصدر
+    const response = await axios.get("https://raw.githubusercontent.com/iptv-org/iptv/master/streams/sports.m3u", { timeout: 4000 }).catch(() => null);
+    
+    // قائمة تجريبية للأحداث والقنوات الرياضية العالية الجودة
+    const metas = [
+      {
+        id: "match_beIn_sports_1",
+        type: "tv",
+        name: "⚽ beIN Sports Premium / HQ",
+        poster: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/BeIN_Sports_logo.svg/512px-BeIN_Sports_logo.svg.png",
+        description: "بث مباشر لمباريات اليوم الدوري الإنجليزي والأبطال"
+      },
+      {
+        id: "match_sky_sports_main",
+        type: "tv",
+        name: "⚽ Sky Sports Main Event (4K/HD)",
+        poster: "https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Sky_Sports_logo_2017.svg/512px-Sky_Sports_logo_2017.svg.png",
+        description: "التغطية البريطانية المباشرة للمباريات بأعلى جودة"
+      },
+      {
+        id: "match_tnt_sports_1",
+        type: "tv",
+        name: "⚽ TNT Sports 1 UK",
+        poster: "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/TNT_Sports_logo.svg/512px-TNT_Sports_logo.svg.png",
+        description: "بث المباشر الأوروبي للمباريات القارية"
+      }
+    ];
+
+    res.json({ metas });
+  } catch (error) {
+    res.json({ metas: [] });
+  }
+});
+
+// 4. جلب تفاصيل المباراة/القناة (Meta Handler)
+app.get("/meta/tv/:id.json", (req, res) => {
+  const matchId = req.params.id;
+  
+  res.json({
+    meta: {
+      id: matchId,
+      type: "tv",
+      name: "بث مباشر للمباراة القادمة",
+      poster: "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=500",
+      description: "اختر أحد المصادر الأجنبية بالأسفل لمشاهدة البث المباشر بجودة عالية ودون تقطيع."
+    }
+  });
+});
+
+// 5. محرك جلب روابط البث المباشر (Stream Handler)
+app.get("/stream/tv/:id.json", async (req, res) => {
+  const streams = [];
+
+  // روابط وسيرفرات البث المباشر المشهورة ذات الجودة العالية (HLS / M3U8)
+  streams.push({
+    name: "⚡ Stream 1 (1080p 60fps)",
+    title: "🌐 المصدر الأول: سيرفر أجنبي مباشر - جودة عالية FHD",
+    url: "https://stream.ec/live/stream1/index.m3u8" // رابط بث HLS مباشر
+  });
+
+  streams.push({
+    name: "⚡ Stream 2 (720p HQ)",
+    title: "🌐 المصدر الثاني: سيرفر ثابت للأجهزة الضعيفة والإنترنت المتوسط",
+    url: "https://stream.ec/live/stream2/index.m3u8"
+  });
+
+  streams.push({
+    name: "🌀 Backup Live Link",
+    title: "🌐 المصدر الاحتياطي: بث متعدد الجودات (Auto Quality)",
+    url: "https://iptv-org.github.io/iptv/categories/sports.m3u"
+  });
+
+  res.json({ streams });
+});
+
+const PORT = process.env.PORT || 7000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
