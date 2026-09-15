@@ -10,7 +10,7 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-// 1. واجهة الإعدادات مع إدخال كافة بيانات اتصال NNTP
+// 1. واجهة الإعدادات
 app.get("/configure", (req, res) => {
   const html = `
   <!DOCTYPE html>
@@ -18,25 +18,24 @@ app.get("/configure", (req, res) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>إعدادات استضافة TorBox NNTP الكاملة</title>
+    <title>إعدادات TorBox Usenet Direct</title>
     <style>
-      body { font-family: system-ui, -apple-system, sans-serif; background: #0f0f0f; color: #fff; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-      .card { background: #1a1a1a; padding: 25px; border-radius: 12px; width: 100%; max-width: 440px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); border: 1px solid #2a2a2a; }
+      body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #fff; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+      .card { background: #1a1a1a; padding: 25px; border-radius: 12px; width: 100%; max-width: 440px; border: 1px solid #2a2a2a; }
       h2 { color: #e50914; margin-bottom: 5px; text-align: center; font-size: 20px; }
       p.sub { font-size: 12px; color: #aaa; text-align: center; margin-bottom: 20px; }
       .section-title { font-size: 13px; color: #e50914; font-weight: bold; margin-top: 15px; border-bottom: 1px solid #333; padding-bottom: 4px; text-align: right; }
       label { display: block; text-align: right; margin-top: 10px; font-weight: 600; font-size: 12px; color: #ccc; }
       input[type="text"], input[type="password"] { width: 100%; padding: 10px; margin-top: 4px; border-radius: 6px; border: 1px solid #333; background: #242424; color: #fff; box-sizing: border-box; outline: none; font-size: 13px; }
-      input:focus { border-color: #e50914; }
-      button { width: 100%; margin-top: 25px; padding: 12px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; transition: 0.2s; }
+      button { width: 100%; margin-top: 25px; padding: 12px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; }
       button:hover { background: #b80710; }
     </style>
   </head>
   <body>
     <div class="card">
       <h2>🌐 TorBox NNTP Full Server</h2>
-      <p class="sub">إعداد استضافة Usenet الكاملة وتثبيتها في Stremio</p>
-      
+      <p class="sub">إعداد استضافة Usenet المباشرة وتثبيتها في Stremio</p>
+
       <div class="section-title">🔑 المفاتيح الأساسية (API Keys)</div>
       <label>TorBox API Key:</label>
       <input type="text" id="tbKey" placeholder="أدخل TorBox API Key">
@@ -51,16 +50,16 @@ app.get("/configure", (req, res) => {
       <label>Port:</label>
       <input type="text" id="port" value="563">
 
-      <label>Username (إسم المستخدم):</label>
-      <input type="text" id="username" placeholder="أدخل Username المخصص لسيرفر NNTP">
+      <label>Username:</label>
+      <input type="text" id="username" placeholder="اسم المستخدم">
 
-      <label>Password (كلمة المرور):</label>
-      <input type="password" id="password" placeholder="أدخل Password المخصص لسيرفر NNTP">
+      <label>Password:</label>
+      <input type="password" id="password" placeholder="كلمة المرور">
 
-      <label>Connections (عدد الاتصالات):</label>
+      <label>Connections:</label>
       <input type="text" id="connections" value="10">
 
-      <button onclick="install()">تثبيت الإضافة في Stremio مباشرة</button>
+      <button onclick="install()">تثبيت الإضافة في Stremio</button>
     </div>
 
     <script>
@@ -78,7 +77,7 @@ app.get("/configure", (req, res) => {
 
         const configData = { tbKey, geekKey, host, port, username, password, connections };
         const encodedConfig = btoa(JSON.stringify(configData));
-        
+
         const manifestUrl = window.location.origin + '/' + encodeURIComponent(encodedConfig) + '/manifest.json';
         const stremioLink = 'stremio://' + manifestUrl.replace(/^https?:\\/\\//, '');
         window.location.href = stremioLink;
@@ -90,13 +89,13 @@ app.get("/configure", (req, res) => {
   res.send(html);
 });
 
-// 2. ملف Manifest لـ Stremio
+// 2. ملف Manifest
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.torbox.nntp.fullserver",
-    version: "3.0.0",
-    name: "TorBox NNTP Direct Host",
-    description: "ربط استضافة NNTP الكاملة مع NZBGeek لخدمة Stremio",
+    id: "org.torbox.nntp.player",
+    version: "3.1.0",
+    name: "TorBox NNTP Streamer",
+    description: "تشغيل ملفات Usenet مباشرة عبر TorBox",
     resources: ["stream"],
     types: ["movie", "series"],
     idPrefixes: ["tt"],
@@ -104,7 +103,41 @@ app.get("/:config/manifest.json", (req, res) => {
   });
 });
 
-// 3. معالج البحث والبث مع تضمين بيانات السيرفر
+// 3. مسار معالجة التشغيل والتوجيه المباشر
+app.get("/resolve/:tbKey/:nzbUrl", async (req, res) => {
+  try {
+    const { tbKey, nzbUrl } = req.params;
+    const decodedNzb = decodeURIComponent(nzbUrl);
+
+    // إضافة NZB إلى حساب TorBox
+    const createRes = await axios.post("https://api.torbox.app/v1/api/usenet/createusenet", 
+      new URLSearchParams({ link: decodedNzb }),
+      { headers: { Authorization: `Bearer ${tbKey}` } }
+    ).catch(() => null);
+
+    if (createRes?.data?.detail?.id) {
+      const usenetId = createRes.data.detail.id;
+      // جلب رابط التحميل المباشر للفيلم/الحلقة
+      const infoRes = await axios.get(`https://api.torbox.app/v1/api/usenet/mylist?id=${usenetId}`, {
+        headers: { Authorization: `Bearer ${tbKey}` }
+      });
+
+      const files = infoRes.data?.data?.files;
+      if (files && files.length > 0) {
+        // اختيار أضخم ملف فيديو داخل NZB
+        const videoFile = files.sort((a, b) => b.size - a.size)[0];
+        const downloadUrl = `https://api.torbox.app/v1/api/usenet/requestdl?token=${tbKey}&usenet_id=${usenetId}&file_id=${videoFile.id}`;
+        return res.redirect(302, downloadUrl);
+      }
+    }
+
+    res.status(404).send("File not ready or found");
+  } catch (err) {
+    res.status(500).send("Stream resolution error");
+  }
+});
+
+// 4. معالج البحث من NZBGeek
 app.get("/:config/stream/:type/:id.json", async (req, res) => {
   try {
     const rawConfig = req.params.config;
@@ -139,20 +172,24 @@ app.get("/:config/stream/:type/:id.json", async (req, res) => {
         if (geekRes?.data?.channel?.item) {
           const items = Array.isArray(geekRes.data.channel.item) ? geekRes.data.channel.item : [geekRes.data.channel.item];
 
-          for (const item of items.slice(0, 10)) {
+          for (const item of items.slice(0, 8)) {
             const title = item.title || "NZB Stream";
             const nzbDownloadLink = item.link || item.enclosure?.["@attributes"]?.url;
-            
+
             let sizeStr = "";
             if (item.enclosure?.["@attributes"]?.length) {
               sizeStr = `\n💾 الحجم: ${(item.enclosure["@attributes"].length / (1024 ** 3)).toFixed(2)} GB`;
             }
 
             if (nzbDownloadLink) {
+              const protocol = req.protocol;
+              const hostHeader = req.get("host");
+              const resolveUrl = `${protocol}://${hostHeader}/resolve/${tbKey}/${encodeURIComponent(nzbDownloadLink)}`;
+
               streams.push({
                 name: "⚡ TorBox NNTP",
                 title: `🌐 Host: ${host || 'nntp.torbox.app'} [Conn: ${connections || 10}]\n📦 ${title}${sizeStr}`,
-                url: `https://api.torbox.app/v1/api/usenet/create?token=${tbKey}&link=${encodeURIComponent(nzbDownloadLink)}`
+                url: resolveUrl
               });
             }
           }
@@ -162,7 +199,6 @@ app.get("/:config/stream/:type/:id.json", async (req, res) => {
 
     res.json({ streams });
   } catch (error) {
-    console.error("NNTP Full Stream Error:", error.message);
     res.json({ streams: [] });
   }
 });
