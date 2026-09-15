@@ -1,46 +1,46 @@
 const express = require("express");
 const axios = require("axios");
+const cors = require("cors");
 const app = express();
 
+app.use(cors());
 app.use(express.json());
 
-// 1. صفحة الإعدادات والتكوين التفاعلية
+// 1. صفحة الإعدادات
 app.get("/configure", (req, res) => {
   const html = `
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إعدادات إضافة TorBox Usenet</title>
     <style>
-      body { font-family: sans-serif; background: #141414; color: #fff; padding: 20px; display: flex; justify-content: center; }
-      .card { background: #1f1f1f; padding: 25px; border-radius: 10px; width: 100%; max-width: 450px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-      h2 { text-align: center; color: #e50914; }
-      label { display: block; margin-top: 15px; font-weight: bold; }
-      input[type="text"] { width: 100%; padding: 10px; margin-top: 5px; border-radius: 5px; border: 1px solid #333; background: #2b2b2b; color: #fff; box-sizing: border-box; }
-      button { width: 100%; margin-top: 25px; padding: 12px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 5px; cursor: pointer; font-size: 16px; }
+      body { font-family: sans-serif; background: #141414; color: #fff; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 80vh; margin: 0; }
+      .card { background: #1f1f1f; padding: 25px; border-radius: 10px; width: 100%; max-width: 400px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); text-align: center; }
+      h2 { color: #e50914; margin-bottom: 20px; }
+      label { display: block; text-align: right; margin-top: 15px; font-weight: bold; font-size: 14px; }
+      input[type="text"] { width: 100%; padding: 12px; margin-top: 5px; border-radius: 5px; border: 1px solid #333; background: #2b2b2b; color: #fff; box-sizing: border-box; outline: none; }
+      button { width: 100%; margin-top: 25px; padding: 12px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 5px; cursor: pointer; font-size: 16px; transition: 0.2s; }
       button:hover { background: #b80710; }
     </style>
   </head>
   <body>
     <div class="card">
-      <h2>⚙️ إعدادات TorBox Usenet Direct</h2>
-      
+      <h2>⚙️ TorBox Usenet Direct</h2>
       <label>مفتاح TorBox API Key:</label>
-      <input type="text" id="torboxKey" placeholder="أدخل مفتاح TorBox الخاص بك">
-
+      <input type="text" id="torboxKey" placeholder="أدخل المفتاح هنا">
       <button onclick="install()">تثبيت الإضافة في Stremio</button>
     </div>
 
     <script>
       function install() {
         const tbKey = document.getElementById('torboxKey').value.trim();
-
         if(!tbKey) { alert('يرجى إدخال مفتاح TorBox API'); return; }
-
-        const configStr = \`tbKey=\${tbKey}\`;
-        const manifestUrl = window.location.origin + '/' + btoa(configStr) + '/manifest.json';
-        window.location.href = 'stremio://' + manifestUrl.replace(/^https?:\\/\\//, '');
+        
+        const manifestUrl = window.location.origin + '/' + encodeURIComponent(tbKey) + '/manifest.json';
+        const stremioLink = 'stremio://' + manifestUrl.replace(/^https?:\\/\\//, '');
+        window.location.href = stremioLink;
       }
     </script>
   </body>
@@ -50,10 +50,10 @@ app.get("/configure", (req, res) => {
 });
 
 // 2. ملف التعريف Manifest
-app.get("/:config/manifest.json", (req, res) => {
+app.get("/:tbKey/manifest.json", (req, res) => {
   res.json({
-    id: "org.my.torbox.usenet.only",
-    version: "1.3.0",
+    id: "org.my.torbox.usenet.direct",
+    version: "1.4.0",
     name: "TorBox Usenet Finder",
     description: "جلب روابط Usenet & NZB المباشرة عبر TorBox",
     resources: ["stream"],
@@ -63,25 +63,21 @@ app.get("/:config/manifest.json", (req, res) => {
   });
 });
 
-// 3. معالج البث المباشر (Usenet Only)
-app.get("/:config/stream/:type/:id.json", async (req, res) => {
+// 3. جلب الروابط من Usenet
+app.get("/:tbKey/stream/:type/:id.json", async (req, res) => {
   try {
-    const rawConfig = Buffer.from(req.params.config, 'base64').toString('utf-8');
-    const params = new URLSearchParams(rawConfig);
-    const tbKey = params.get('tbKey');
-
+    const tbKey = req.params.tbKey;
     const streams = [];
     const imdbId = req.params.id.split(":")[0];
 
     if (tbKey) {
-      // 1. جلب اسم المحتوى من Cinematic API عبر IMDb ID
+      // جلب اسم العنوان عبر Cinemeta
       const metaRes = await axios.get(`https://v3-cinemeta.strem.io/meta/${req.params.type}/${imdbId}.json`);
       const meta = metaRes.data?.meta;
 
       if (meta && meta.name) {
         let searchQuery = meta.name;
         
-        // إذا كان مسلسلاً، نحدد الموسم والحلقة S01E01
         if (req.params.type === "series" && req.params.id.includes(":")) {
           const parts = req.params.id.split(":");
           const season = String(parts[1]).padStart(2, '0');
@@ -89,7 +85,7 @@ app.get("/:config/stream/:type/:id.json", async (req, res) => {
           searchQuery += ` S${season}E${episode}`;
         }
 
-        // 2. البحث في شبكة Usenet مباشرة عبر TorBox Search API
+        // البحث في Usenet عبر TorBox
         const searchRes = await axios.get(`https://api.torbox.app/v1/api/usenet/search?query=${encodeURIComponent(searchQuery)}`, {
           headers: { Authorization: `Bearer ${tbKey}` }
         });
@@ -99,7 +95,7 @@ app.get("/:config/stream/:type/:id.json", async (req, res) => {
             const sizeGB = result.size ? (result.size / (1024 ** 3)).toFixed(2) : "N/A";
             streams.push({
               name: "⚡ TorBox Usenet",
-              title: `🌐 NZB: ${result.name || result.title}\n💾 الحجم: ${sizeGB} GB`,
+              title: `🌐 ${result.name || result.title}\n💾 الحجم: ${sizeGB} GB`,
               url: `https://api.torbox.app/v1/api/usenet/create?token=${tbKey}&link=${encodeURIComponent(result.download_url || result.link)}`
             });
           }
@@ -116,3 +112,4 @@ app.get("/:config/stream/:type/:id.json", async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
