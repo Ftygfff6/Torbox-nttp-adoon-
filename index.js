@@ -18,7 +18,7 @@ app.get(["/", "/configure"], (req, res) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>إعدادات إضافة Kick Multi-Quality</title>
+    <title>إعدادات إضافة Kick Live + Chat</title>
     <style>
       body { font-family: system-ui, sans-serif; background: #0b0e0f; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
       .card { background: #151a1c; padding: 30px; border-radius: 16px; width: 90%; max-width: 460px; border: 1px solid #232b2e; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
@@ -33,7 +33,7 @@ app.get(["/", "/configure"], (req, res) => {
   </head>
   <body>
     <div class="card">
-      <h2>🟢 Kick Multi-Quality Streamer</h2>
+      <h2>🟢 Kick Live + Real-Time Chat</h2>
       <p>أدخل أسماء قنوات Kick (Usernames) مفصولة بفواصل:</p>
       
       <div class="input-group">
@@ -74,17 +74,17 @@ app.get(["/", "/configure"], (req, res) => {
 ------------------------- */
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.live.mq",
-    version: "2.0.0",
-    name: "Kick Live (جميع الجودات)",
-    description: "متابعة البث المباشر لقنوات Kick باختيار الجودة من 1080p إلى 160p",
+    id: "org.kick.live.chat",
+    version: "3.0.0",
+    name: "Kick Live + Chat Feed",
+    description: "بث مباشر لقنوات Kick مع إظهار شات المحادثة الحي داخل تفاصيل القناة",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
     catalogs: [
       {
         type: "tv",
-        id: "kick_mq_catalog",
-        name: "🟢 Kick - البث المباشر"
+        id: "kick_chat_catalog",
+        name: "🟢 Kick - البث والشات"
       }
     ],
     idPrefixes: ["kick:"]
@@ -94,7 +94,7 @@ app.get("/:config/manifest.json", (req, res) => {
 /* -------------------------
    3. Catalog
 ------------------------- */
-app.get("/:config/catalog/tv/kick_mq_catalog.json", (req, res) => {
+app.get("/:config/catalog/tv/kick_chat_catalog.json", (req, res) => {
   const { config } = req.params;
   try {
     const rawChannels = decodeURIComponent(Buffer.from(config, 'base64').toString('utf-8'));
@@ -105,7 +105,7 @@ app.get("/:config/catalog/tv/kick_mq_catalog.json", (req, res) => {
       type: "tv",
       name: `Kick: ${channel}`,
       poster: `https://ui-avatars.com/api/?name=${channel}&background=0B0E0F&color=53FC18&size=512&bold=true`,
-      description: `بث مباشر لقناة ${channel} على Kick (متعدد الجودات)`
+      description: `البث المباشر والشات الحي للقناة ${channel}`
     }));
 
     res.json({ metas });
@@ -115,28 +115,61 @@ app.get("/:config/catalog/tv/kick_mq_catalog.json", (req, res) => {
 });
 
 /* -------------------------
-   4. Meta
+   4. Meta (سحب الشات المباشر وعرضه داخل الوصف)
 ------------------------- */
 app.get("/:config/meta/tv/:id.json", async (req, res) => {
   const { id } = req.params;
   if (!id.startsWith("kick:")) return res.json({ meta: {} });
 
   const channelSlug = id.replace("kick:", "").trim().toLowerCase();
+  let chatLogText = "💬 لا توجد رسائل شات حالية أو البث أوفلاين.";
+
+  try {
+    // 1. جلب بيانات القناة والـ Chatroom ID
+    const channelRes = await axios.get(`https://kick.com/api/v2/channels/${channelSlug}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json"
+      },
+      timeout: 4000
+    });
+
+    const chatroomId = channelRes.data?.chatroom?.id;
+
+    // 2. جلب آخر رسائل الشات الحية
+    if (chatroomId) {
+      const chatRes = await axios.get(`https://kick.com/api/v2/chatrooms/${chatroomId}/messages`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "Accept": "application/json"
+        },
+        timeout: 4000
+      });
+
+      const messages = chatRes.data?.data?.messages || [];
+      if (messages.length > 0) {
+        const recentMessages = messages.slice(-10).map(m => `👤 ${m.sender.username}: ${m.content}`).join("\n");
+        chatLogText = `💬 **أحدث رسائل الشات المباشر:**\n\n${recentMessages}`;
+      }
+    }
+  } catch (e) {
+    console.error("Chat Fetch Error:", e.message);
+  }
 
   return res.json({
     meta: {
       id: `kick:${channelSlug}`,
       type: "tv",
-      name: `Kick Channel: ${channelSlug}`,
+      name: `Kick: ${channelSlug}`,
       poster: `https://ui-avatars.com/api/?name=${channelSlug}&background=0B0E0F&color=53FC18&size=512&bold=true`,
       background: `https://ui-avatars.com/api/?name=${channelSlug}&background=151A1C&color=53FC18&size=1024&bold=true`,
-      description: `اختر الجودة المناسبة لبث القناة ${channelSlug}`
+      description: `${chatLogText}\n\nاختر الجودة أدناه لبدء المشاهدة.`
     }
   });
 });
 
 /* -------------------------
-   5. Stream Handler (تفليك وتنسيق الجودات من الأعلى للأدنى)
+   5. Stream Handler (الجودات المتعددة)
 ------------------------- */
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const { id } = req.params;
@@ -147,7 +180,7 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
   try {
     const response = await axios.get(`https://kick.com/api/v2/channels/${channelSlug}`, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json"
       },
       timeout: 5000
@@ -162,14 +195,12 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
 
       const streams = [];
 
-      // الخيار التلقائي (Auto)
       streams.push({
         name: "🟢 [KICK AUTO]",
-        title: `جودة تلقائية (حسب سرعة النت)\n${streamTitle}`,
+        title: `جودة تلقائية\n${streamTitle}`,
         url: masterPlaylistUrl
       });
 
-      // جلب ملف الـ m3u8 واستخراج الجودات
       try {
         const playlistRes = await axios.get(masterPlaylistUrl, { timeout: 4000 });
         const lines = playlistRes.data.split("\n");
@@ -182,7 +213,6 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
             const line = lines[i];
             const nextLine = lines[i + 1] ? lines[i + 1].trim() : "";
 
-            // استخراج الدقة Resolution
             const resMatch = line.match(/RESOLUTION=(\d+x\d+)/);
             const frameRateMatch = line.match(/FRAME-RATE=([\d\.]+)/);
 
@@ -209,7 +239,6 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
           }
         }
 
-        // ترتيب الجودات من الأعلى إلى الأدنى
         extractedQualities.sort((a, b) => b.height - a.height);
 
         extractedQualities.forEach(q => {
@@ -221,7 +250,7 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
         });
 
       } catch (e) {
-        console.error("Master Playlist Parsing Error:", e.message);
+        console.error("Master Playlist Error:", e.message);
       }
 
       return res.json({ streams });
@@ -242,5 +271,5 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Multi-Quality Kick Addon running on port ${PORT}`);
+  console.log(`🚀 Kick Addon with Live Chat running on port ${PORT}`);
 });
