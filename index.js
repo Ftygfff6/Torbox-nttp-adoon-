@@ -1,5 +1,4 @@
 const express = require("express");
-const axios = require("axios");
 const cors = require("cors");
 
 const app = express();
@@ -7,13 +6,6 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
-
-// هيدرز الكيك المطلوبة لتشغيل ملفات HLS
-const KICK_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Referer": "https://kick.com/",
-  "Origin": "https://kick.com"
-};
 
 /* -------------------------
    1. صفحة الإعدادات
@@ -82,9 +74,9 @@ app.get(["/", "/configure"], (req, res) => {
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
     id: "org.kick.custom.following",
-    version: "2.1.0",
+    version: "2.2.0",
     name: "Kick - متابعاتك",
-    description: "تشغيل بثوث وإعادات Kick المباشرة مع دعم الهيدرز",
+    description: "توجيه قنوات وإعادات Kick للمشغلات الخارجية",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
     catalogs: [
@@ -137,13 +129,13 @@ app.get("/:config/meta/tv/:id.json", async (req, res) => {
       name: channelName.toUpperCase(),
       poster: `https://ui-avatars.com/api/?name=${channelName}&background=0D0E12&color=53FC18&size=512&bold=true`,
       background: `https://ui-avatars.com/api/?name=${channelName}&background=0D0E12&color=53FC18&size=1024&bold=true`,
-      description: `البث المباشر والإعادات لقناة ${channelName}`
+      description: `مشاهدة قناة ${channelName}`
     }
   });
 });
 
 /* -------------------------
-   5. Stream Handler (مع تمرير الهيدرز)
+   5. Stream Handler
 ------------------------- */
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const { id } = req.params;
@@ -152,30 +144,17 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const channelName = id.replace("kick:", "").trim().toLowerCase();
   const streams = [];
 
-  // 1. رابط HLS المباشر المرفق مع HTTP Headers لتجاوز الحماية
+  // 1. فتح البث المباشر فوراً عبر التطبيق الرسمي أو المتصفح
   streams.push({
-    name: "[🟢 LIVE / HLS DIRECT]",
-    title: `تشغيل البث المباشر للقناة (${channelName})`,
-    url: `https://stream.kick.com/play/${channelName}.m3u8`,
-    behaviorHints: {
-      notSupported: false,
-      proxyHeaders: {
-        request: KICK_HEADERS
-      }
-    }
+    name: "[🟢 LIVE KICK]",
+    title: `فتح البث المباشر لقناة ${channelName.toUpperCase()}`,
+    externalUrl: `https://kick.com/${channelName}`
   });
 
-  // 2. رابط بروكسي لتجاوز الحظر في حال فشل المشغل الداخلي
+  // 2. فتح أرشيف الإعادات المسجلة (VODs)
   streams.push({
-    name: "[⚡ PROXY STREAM]",
-    title: `تشغيل عبر سيرفر وسيط (تجاوز الحماية)`,
-    url: `https://m3u8-proxy.vlive.workers.dev/?url=${encodeURIComponent(`https://stream.kick.com/play/${channelName}.m3u8`)}`
-  });
-
-  // 3. فتح الإعادة مباشرة في تطبيق/موقع Kick
-  streams.push({
-    name: "[🎬 KICK APP / VODS]",
-    title: `فتح الإعادات والـ Clips في تطبيق Kick`,
+    name: "[🎬 KICK REPLAYS / VODS]",
+    title: `تصفح كل الإعادات المسجلة لقناة ${channelName}`,
     externalUrl: `https://kick.com/${channelName}/videos`
   });
 
