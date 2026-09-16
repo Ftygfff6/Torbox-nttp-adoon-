@@ -8,8 +8,16 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 
+// الهيدرز لتجاوز حظر Cloudflare البسيط
+const KICK_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "Accept": "application/json",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Referer": "https://kick.com/"
+};
+
 /* -------------------------
-   1. صفحة التثبيت والإعدادات
+   1. صفحة الإعدادات
 ------------------------- */
 app.get(["/", "/configure"], (req, res) => {
   const html = `
@@ -34,11 +42,11 @@ app.get(["/", "/configure"], (req, res) => {
   <body>
     <div class="card">
       <h2>🟢 Kick Stremio Config</h2>
-      <p>أدخل أسماء القنوات مفصولة بفواصل (مثل: xqc, adinross):</p>
+      <p>أدخل أسماء القنوات مفصولة بفواصل أو مسافات:</p>
       
       <div class="input-group">
         <label>أسماء القنوات (Usernames):</label>
-        <textarea id="channels" placeholder="xqc, adinross"></textarea>
+        <textarea id="channels" placeholder="playaway, we11y, abu_abeer16"></textarea>
       </div>
 
       <button onclick="install()">تثبيت الإضافة في Stremio</button>
@@ -52,9 +60,13 @@ app.get(["/", "/configure"], (req, res) => {
           return;
         }
         
-        const channelsList = input.split(',').map(c => c.trim().toLowerCase()).filter(Boolean).join(',');
-        const encodedConfig = btoa(encodeURIComponent(channelsList));
+        const channelsList = input
+          .split(/[\\s,\\n]+/)
+          .map(c => c.trim().toLowerCase())
+          .filter(Boolean)
+          .join(',');
 
+        const encodedConfig = btoa(encodeURIComponent(channelsList));
         const manifestUrl = window.location.origin + '/' + encodedConfig + '/manifest.json';
         window.location.href = 'stremio://' + manifestUrl.replace(/^https?:\\/\\//, '');
       }
@@ -66,13 +78,13 @@ app.get(["/", "/configure"], (req, res) => {
 });
 
 /* -------------------------
-   2. Manifest التفاعلي
+   2. Manifest
 ------------------------- */
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
     id: "org.kick.custom.following",
-    version: "1.4.0",
-    name: "Kick - قنواتك المتابعة",
+    version: "1.5.0",
+    name: "Kick - متابعاتك",
     description: "بثوث وإعادات قنوات Kick المتابعة",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
@@ -80,7 +92,7 @@ app.get("/:config/manifest.json", (req, res) => {
       {
         type: "tv",
         id: "kick_following",
-        name: "قنوات Kick المتابعة"
+        name: "Kick - قنواتك المتابعة"
       }
     ],
     idPrefixes: ["kick:"]
@@ -92,7 +104,6 @@ app.get("/:config/manifest.json", (req, res) => {
 ------------------------- */
 app.get("/:config/catalog/tv/kick_following.json", (req, res) => {
   const { config } = req.params;
-
   try {
     const rawChannels = decodeURIComponent(Buffer.from(config, 'base64').toString('utf-8'));
     const channelArray = rawChannels.split(',').map(c => c.trim()).filter(Boolean);
@@ -102,7 +113,7 @@ app.get("/:config/catalog/tv/kick_following.json", (req, res) => {
       type: "tv",
       name: channel.toUpperCase(),
       poster: `https://ui-avatars.com/api/?name=${channel}&background=0D0E12&color=53FC18&size=512&bold=true`,
-      description: `صفحة بث وإعادة قناة ${channel} على منصة Kick`
+      description: `قناة ${channel} على Kick`
     }));
 
     res.json({ metas });
@@ -112,87 +123,102 @@ app.get("/:config/catalog/tv/kick_following.json", (req, res) => {
 });
 
 /* -------------------------
-   4. معالج البيانات الوصفية (Meta Handler) - حل المشكلة الأساسية
+   4. Meta Handler
 ------------------------- */
 app.get("/:config/meta/tv/:id.json", async (req, res) => {
   const { id } = req.params;
-
-  if (!id.startsWith("kick:")) {
-    return res.json({ meta: {} });
-  }
+  if (!id.startsWith("kick:")) return res.json({ meta: {} });
 
   const channelName = id.replace("kick:", "").trim().toLowerCase();
 
-  const meta = {
-    id: `kick:${channelName}`,
-    type: "tv",
-    name: channelName.toUpperCase(),
-    poster: `https://ui-avatars.com/api/?name=${channelName}&background=0D0E12&color=53FC18&size=512&bold=true`,
-    background: `https://ui-avatars.com/api/?name=${channelName}&background=0D0E12&color=53FC18&size=1024&bold=true`,
-    description: `بث مباشر وإعادة تسجيل لقناة ${channelName} على منصة Kick`
-  };
-
-  return res.json({ meta });
+  return res.json({
+    meta: {
+      id: `kick:${channelName}`,
+      type: "tv",
+      name: channelName.toUpperCase(),
+      poster: `https://ui-avatars.com/api/?name=${channelName}&background=0D0E12&color=53FC18&size=512&bold=true`,
+      background: `https://ui-avatars.com/api/?name=${channelName}&background=0D0E12&color=53FC18&size=1024&bold=true`,
+      description: `شاهد البث المباشر والإعادات لقناة ${channelName}`
+    }
+  });
 });
 
 /* -------------------------
-   5. Stream Handler (مباشر + إعادة)
+   5. Stream Handler (معالجة المباشر والإعادة)
 ------------------------- */
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const { id } = req.params;
-
-  if (!id.startsWith("kick:")) {
-    return res.json({ streams: [] });
-  }
+  if (!id.startsWith("kick:")) return res.json({ streams: [] });
 
   const channelName = id.replace("kick:", "").trim().toLowerCase();
   const streams = [];
 
   try {
-    const channelRes = await axios.get(`https://kick.com/api/v1/channels/${channelName}`, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      },
-      timeout: 4000
-    }).catch(() => null);
+    // طلب بيانات القناة
+    const response = await axios.get(`https://kick.com/api/v2/channels/${channelName}`, {
+      headers: KICK_HEADERS,
+      timeout: 5000
+    });
 
-    if (channelRes?.data) {
-      const channelData = channelRes.data;
+    const data = response.data;
 
-      // أ) رابط البث المباشر
-      if (channelData.livestream && channelData.playback_url) {
-        streams.push({
-          name: "[🟢 KICK LIVE]",
-          title: `مباشر الان: ${channelData.user.username}\n🎮 ${channelData.livestream.session_title || 'بث مباشر'}`,
-          url: channelData.playback_url
-        });
-      }
-
-      // ب) رابط إعادة البث (VOD)
-      if (channelData.previous_livestreams && channelData.previous_livestreams.length > 0) {
-        const latestVod = channelData.previous_livestreams[0];
-        if (latestVod.video && latestVod.video.video_url) {
-          streams.push({
-            name: "[🎬 KICK REPLAY]",
-            title: `إعادة أحدث بث: ${latestVod.session_title || 'البث المسجل'}\n📅 ${latestVod.created_at ? latestVod.created_at.split('T')[0] : 'سابق'}`,
-            url: latestVod.video.video_url
-          });
-        }
-      }
+    // 1. فحص البث المباشر
+    if (data && data.livestream && data.playback_url) {
+      streams.push({
+        name: "[🟢 KICK LIVE]",
+        title: `مباشر الآن: ${data.livestream.session_title || 'بث مباشر'}\n👥 المتابعين: ${data.livestream.viewer_count || 0}`,
+        url: data.playback_url
+      });
     }
 
+    // 2. فحص الإعادات المسجلة (VODs)
+    if (data && data.previous_livestreams && data.previous_livestreams.length > 0) {
+      // نأخذ آخر 3 بثوث مسجلة كإعادات
+      const vods = data.previous_livestreams.slice(0, 3);
+
+      vods.forEach((vod, index) => {
+        let streamUrl = null;
+
+        if (vod.video && vod.video.video_url) {
+          streamUrl = vod.video.video_url;
+        } else if (vod.slug) {
+          // رابط احتياطي لمشاهدة الإعادة في حال عدم توفر المقطع المباشر
+          streamUrl = `https://kick.com/${channelName}?video=${vod.slug}`;
+        }
+
+        if (streamUrl) {
+          const isDirect = streamUrl.endsWith('.m3u8');
+          streams.push({
+            name: `[🎬 REPLAY ${index + 1}]`,
+            title: `إعادة: ${vod.session_title || 'بث سابق'}\n📅 ${vod.created_at ? vod.created_at.split('T')[0] : ''}`,
+            ...(isDirect ? { url: streamUrl } : { externalUrl: streamUrl })
+          });
+        }
+      });
+    }
+
+    // إذا كانت القناة أوفلاين ولا توجد إعادات
     if (streams.length === 0) {
       streams.push({
         name: "[🔴 KICK OFFLINE]",
-        title: `لا يوجد بث مباشر أو إعادة متاحة للقناة (${channelName}) حالياً`,
+        title: `القناة أوفلاين حالياً ولا توجد إعادات مسجلة متاحة`,
         externalUrl: `https://kick.com/${channelName}`
       });
     }
 
     return res.json({ streams });
+
   } catch (error) {
-    console.error("Kick Stream Error:", error.message);
-    return res.json({ streams: [] });
+    console.error(`خطأ في جلب بيانات ${channelName}:`, error.message);
+    
+    // في حال تعذر الاتصال بـ API، إظهار رابط احتياطي للمشاهدة
+    return res.json({
+      streams: [{
+        name: "[🔗 KICK WEB]",
+        title: `فتح قناة ${channelName} في المتصفح/التطبيق`,
+        externalUrl: `https://kick.com/${channelName}`
+      }]
+    });
   }
 });
 
@@ -204,5 +230,5 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Kick Custom Addon with Meta Support running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
