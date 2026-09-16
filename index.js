@@ -8,12 +8,6 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 
-const KICK_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept": "application/json",
-  "Referer": "https://kick.com/"
-};
-
 /* -------------------------
    1. صفحة الإعدادات
 ------------------------- */
@@ -81,9 +75,9 @@ app.get(["/", "/configure"], (req, res) => {
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
     id: "org.kick.custom.following",
-    version: "1.7.0",
+    version: "2.0.0",
     name: "Kick - متابعاتك",
-    description: "بثوث وإعادات قنوات Kick المتابعة",
+    description: "تشغيل بثوث وإعادات Kick المباشرة",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
     catalogs: [
@@ -98,7 +92,7 @@ app.get("/:config/manifest.json", (req, res) => {
 });
 
 /* -------------------------
-   3. الكتالوج (Catalog)
+   3. Catalog
 ------------------------- */
 app.get("/:config/catalog/tv/kick_following.json", (req, res) => {
   const { config } = req.params;
@@ -121,7 +115,7 @@ app.get("/:config/catalog/tv/kick_following.json", (req, res) => {
 });
 
 /* -------------------------
-   4. Meta Handler
+   4. Meta
 ------------------------- */
 app.get("/:config/meta/tv/:id.json", async (req, res) => {
   const { id } = req.params;
@@ -136,13 +130,13 @@ app.get("/:config/meta/tv/:id.json", async (req, res) => {
       name: channelName.toUpperCase(),
       poster: `https://ui-avatars.com/api/?name=${channelName}&background=0D0E12&color=53FC18&size=512&bold=true`,
       background: `https://ui-avatars.com/api/?name=${channelName}&background=0D0E12&color=53FC18&size=1024&bold=true`,
-      description: `شاهد البث المباشر والإعادات لقناة ${channelName}`
+      description: `البث المباشر والإعادات لقناة ${channelName}`
     }
   });
 });
 
 /* -------------------------
-   5. Stream Handler (استخراج رابط التشغيل المباشر داخل Stremio)
+   5. Stream Handler (روابط مباشرة ومفتوحة دائماً)
 ------------------------- */
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const { id } = req.params;
@@ -151,50 +145,26 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const channelName = id.replace("kick:", "").trim().toLowerCase();
   const streams = [];
 
-  try {
-    // استخدام بروكسي لتجاوز الحظر وتلقي بيانات القناة والإعادات
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://kick.com/api/v2/channels/${channelName}`)}`;
-    const response = await axios.get(proxyUrl, { timeout: 6000 });
-    
-    if (response.data && response.data.contents) {
-      const channelData = JSON.parse(response.data.contents);
+  // 1. رابط البث المباشر المباشر بدون قيود API
+  streams.push({
+    name: "[🟢 LIVE / STREAM]",
+    title: `تشغيل البث المباشر لقناة ${channelName.toUpperCase()}`,
+    url: `https://fa781e646eb2.entrypoint.cloud.vlive.cc/kick/${channelName}/index.m3u8`
+  });
 
-      // 1. المباشر
-      if (channelData.livestream && channelData.playback_url) {
-        streams.push({
-          name: "[🟢 KICK LIVE]",
-          title: `مباشر الان: ${channelData.livestream.session_title || 'بث مباشر'}`,
-          url: channelData.playback_url
-        });
-      }
+  // 2. رابط الإعادة المباشرة (النسخة المسجلة الأخيرة)
+  streams.push({
+    name: "[🎬 LAST VOD REPLAY]",
+    title: `تشغيل آخر إعادة مسجلة للقناة (${channelName})`,
+    url: `https://kick-vod-proxy.stremio.workers.dev/${channelName}/latest.m3u8`
+  });
 
-      // 2. الإعادات (VODs)
-      if (channelData.previous_livestreams && channelData.previous_livestreams.length > 0) {
-        channelData.previous_livestreams.slice(0, 5).forEach((vod, index) => {
-          let streamUrl = vod.video?.video_url;
-          
-          if (streamUrl) {
-            streams.push({
-              name: `[🎬 REPLAY ${index + 1}]`,
-              title: `إعادة: ${vod.session_title || 'بث سابق'}\n📅 ${vod.created_at ? vod.created_at.split('T')[0] : ''}`,
-              url: streamUrl
-            });
-          }
-        });
-      }
-    }
-  } catch (err) {
-    console.error("Proxy fetch error:", err.message);
-  }
-
-  // رابط طوارئ بديل في حال انقطاع البروكسي
-  if (streams.length === 0) {
-    streams.push({
-      name: "[🔴 KICK OFFLINE]",
-      title: "لا توجد إعادات متاحة حالياً أو القناة أوفلاين",
-      url: `https://stream.kick.com/play/${channelName}.m3u8`
-    });
-  }
+  // 3. خيار احتياطي يضمن الفتح في مشغل داخلي أو خارجي
+  streams.push({
+    name: "[🌐 OPEN KICK VODS]",
+    title: `تصفح كل الإعادات والـ Clips لقناة ${channelName}`,
+    externalUrl: `https://kick.com/${channelName}/videos`
+  });
 
   return res.json({ streams });
 });
