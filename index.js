@@ -8,11 +8,9 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 
-// الهيدرز لتجاوز الحظر
 const KICK_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
   "Accept": "application/json",
-  "Accept-Language": "en-US,en;q=0.9",
   "Referer": "https://kick.com/"
 };
 
@@ -83,7 +81,7 @@ app.get(["/", "/configure"], (req, res) => {
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
     id: "org.kick.custom.following",
-    version: "1.6.0",
+    version: "1.7.0",
     name: "Kick - متابعاتك",
     description: "بثوث وإعادات قنوات Kick المتابعة",
     resources: ["catalog", "meta", "stream"],
@@ -92,7 +90,7 @@ app.get("/:config/manifest.json", (req, res) => {
       {
         type: "tv",
         id: "kick_following",
-        name: "Kick - قنواتك المتابعة"
+        name: "Kick - متابعاتك"
       }
     ],
     idPrefixes: ["kick:"]
@@ -144,7 +142,7 @@ app.get("/:config/meta/tv/:id.json", async (req, res) => {
 });
 
 /* -------------------------
-   5. Stream Handler (مباشر + إعادات VOD)
+   5. Stream Handler (استخراج رابط التشغيل المباشر داخل Stremio)
 ------------------------- */
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const { id } = req.params;
@@ -154,78 +152,51 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const streams = [];
 
   try {
-    const channelPromise = axios.get(`https://kick.com/api/v2/channels/${channelName}`, {
-      headers: KICK_HEADERS,
-      timeout: 4000
-    }).catch(() => null);
+    // استخدام بروكسي لتجاوز الحظر وتلقي بيانات القناة والإعادات
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://kick.com/api/v2/channels/${channelName}`)}`;
+    const response = await axios.get(proxyUrl, { timeout: 6000 });
+    
+    if (response.data && response.data.contents) {
+      const channelData = JSON.parse(response.data.contents);
 
-    const vodsPromise = axios.get(`https://kick.com/api/v1/channels/${channelName}/videos`, {
-      headers: KICK_HEADERS,
-      timeout: 4000
-    }).catch(() => null);
+      // 1. المباشر
+      if (channelData.livestream && channelData.playback_url) {
+        streams.push({
+          name: "[🟢 KICK LIVE]",
+          title: `مباشر الان: ${channelData.livestream.session_title || 'بث مباشر'}`,
+          url: channelData.playback_url
+        });
+      }
 
-    const [channelRes, vodsRes] = await Promise.all([channelPromise, vodsPromise]);
-
-    // البث المباشر
-    if (channelRes?.data?.livestream && channelRes.data.playback_url) {
-      streams.push({
-        name: "[🟢 KICK LIVE]",
-        title: `مباشر الان: ${channelRes.data.livestream.session_title || 'بث مباشر'}\n👁️ المشاهدين: ${channelRes.data.livestream.viewer_count || 0}`,
-        url: channelRes.data.playback_url
-      });
+      // 2. الإعادات (VODs)
+      if (channelData.previous_livestreams && channelData.previous_livestreams.length > 0) {
+        channelData.previous_livestreams.slice(0, 5).forEach((vod, index) => {
+          let streamUrl = vod.video?.video_url;
+          
+          if (streamUrl) {
+            streams.push({
+              name: `[🎬 REPLAY ${index + 1}]`,
+              title: `إعادة: ${vod.session_title || 'بث سابق'}\n📅 ${vod.created_at ? vod.created_at.split('T')[0] : ''}`,
+              url: streamUrl
+            });
+          }
+        });
+      }
     }
+  } catch (err) {
+    console.error("Proxy fetch error:", err.message);
+  }
 
-    // الإعادات المسجلة
-    let vodsList = [];
-    if (Array.isArray(vodsRes?.data)) {
-      vodsList = vodsRes.data;
-    } else if (channelRes?.data?.previous_livestreams) {
-      vodsList = channelRes.data.previous_livestreams;
-    }
-
-    if (vodsList.length > 0) {
-      vodsList.slice(0, 5).forEach((vod, idx) => {
-        const vodTitle = vod.session_title || vod.title || `إعادة رقم ${idx + 1}`;
-        const vodDate = vod.created_at ? vod.created_at.split('T')[0] : '';
-        let playUrl = vod.source || vod.video?.video_url;
-
-        if (playUrl && playUrl.endsWith('.m3u8')) {
-          streams.push({
-            name: `[🎬 REPLAY ${idx + 1}]`,
-            title: `إعادة: ${vodTitle}\n📅 ${vodDate}`,
-            url: playUrl
-          });
-        } else if (vod.slug || vod.id) {
-          const vodSlug = vod.slug || vod.id;
-          streams.push({
-            name: `[🎬 REPLAY ${idx + 1}]`,
-            title: `إعادة: ${vodTitle}\n📅 ${vodDate}`,
-            externalUrl: `https://kick.com/${channelName}?video=${vodSlug}`
-          });
-        }
-      });
-    }
-
-    if (streams.length === 0) {
-      streams.push({
-        name: "[🔗 KICK WEB]",
-        title: `فتح أرشيف قناة ${channelName} على موقع Kick`,
-        externalUrl: `https://kick.com/${channelName}/videos`
-      });
-    }
-
-    return res.json({ streams });
-
-  } catch (error) {
-    console.error(`Error loading streams for ${channelName}:`, error.message);
-    return res.json({
-      streams: [{
-        name: "[🔗 KICK WEB]",
-        title: `فتح قناة ${channelName} في المتصفح`,
-        externalUrl: `https://kick.com/${channelName}`
-      }]
+  // رابط طوارئ بديل في حال انقطاع البروكسي
+  if (streams.length === 0) {
+    streams.push({
+      name: "[🔴 KICK OFFLINE]",
+      title: "لا توجد إعادات متاحة حالياً أو القناة أوفلاين",
+      url: `https://stream.kick.com/play/${channelName}.m3u8`
     });
   }
+
+  return res.json({ streams });
 });
 
 /* -------------------------
