@@ -9,7 +9,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 7000;
 
 /* -------------------------
-   1. صفحة الإعدادات (Configure)
+   1. صفحة الإعدادات
 ------------------------- */
 app.get(["/", "/configure"], (req, res) => {
   const html = `
@@ -18,7 +18,7 @@ app.get(["/", "/configure"], (req, res) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>إعدادات إضافة Kick Live + Chat</title>
+    <title>Kick Live Subtitle Chat</title>
     <style>
       body { font-family: system-ui, sans-serif; background: #0b0e0f; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
       .card { background: #151a1c; padding: 30px; border-radius: 16px; width: 90%; max-width: 460px; border: 1px solid #232b2e; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
@@ -33,7 +33,7 @@ app.get(["/", "/configure"], (req, res) => {
   </head>
   <body>
     <div class="card">
-      <h2>🟢 Kick Live + Real-Time Chat</h2>
+      <h2>💬 Kick Live Subtitle Chat</h2>
       <p>أدخل أسماء قنوات Kick (Usernames) مفصولة بفواصل:</p>
       
       <div class="input-group">
@@ -70,21 +70,21 @@ app.get(["/", "/configure"], (req, res) => {
 });
 
 /* -------------------------
-   2. Manifest
+   2. Manifest (تفعيل مصدر الترجمات)
 ------------------------- */
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.live.chat",
-    version: "3.0.0",
-    name: "Kick Live + Chat Feed",
-    description: "بث مباشر لقنوات Kick مع إظهار شات المحادثة الحي داخل تفاصيل القناة",
-    resources: ["catalog", "meta", "stream"],
+    id: "org.kick.live.subchat",
+    version: "4.0.0",
+    name: "Kick Live + Subtitle Chat",
+    description: "عرض شات بث Kick المباشر كترجمة نصية داخل المشغل",
+    resources: ["catalog", "meta", "stream", "subtitles"],
     types: ["tv"],
     catalogs: [
       {
         type: "tv",
-        id: "kick_chat_catalog",
-        name: "🟢 Kick - البث والشات"
+        id: "kick_sub_catalog",
+        name: "🟢 Kick - البث والترجمة"
       }
     ],
     idPrefixes: ["kick:"]
@@ -92,9 +92,9 @@ app.get("/:config/manifest.json", (req, res) => {
 });
 
 /* -------------------------
-   3. Catalog
+   3. Catalog & Meta
 ------------------------- */
-app.get("/:config/catalog/tv/kick_chat_catalog.json", (req, res) => {
+app.get("/:config/catalog/tv/kick_sub_catalog.json", (req, res) => {
   const { config } = req.params;
   try {
     const rawChannels = decodeURIComponent(Buffer.from(config, 'base64').toString('utf-8'));
@@ -105,7 +105,7 @@ app.get("/:config/catalog/tv/kick_chat_catalog.json", (req, res) => {
       type: "tv",
       name: `Kick: ${channel}`,
       poster: `https://ui-avatars.com/api/?name=${channel}&background=0B0E0F&color=53FC18&size=512&bold=true`,
-      description: `البث المباشر والشات الحي للقناة ${channel}`
+      description: `شغّل البث وستجد الشات داخل قائمة الترجمات Subtitles`
     }));
 
     res.json({ metas });
@@ -114,47 +114,11 @@ app.get("/:config/catalog/tv/kick_chat_catalog.json", (req, res) => {
   }
 });
 
-/* -------------------------
-   4. Meta (سحب الشات المباشر وعرضه داخل الوصف)
-------------------------- */
 app.get("/:config/meta/tv/:id.json", async (req, res) => {
   const { id } = req.params;
   if (!id.startsWith("kick:")) return res.json({ meta: {} });
 
   const channelSlug = id.replace("kick:", "").trim().toLowerCase();
-  let chatLogText = "💬 لا توجد رسائل شات حالية أو البث أوفلاين.";
-
-  try {
-    // 1. جلب بيانات القناة والـ Chatroom ID
-    const channelRes = await axios.get(`https://kick.com/api/v2/channels/${channelSlug}`, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json"
-      },
-      timeout: 4000
-    });
-
-    const chatroomId = channelRes.data?.chatroom?.id;
-
-    // 2. جلب آخر رسائل الشات الحية
-    if (chatroomId) {
-      const chatRes = await axios.get(`https://kick.com/api/v2/chatrooms/${chatroomId}/messages`, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          "Accept": "application/json"
-        },
-        timeout: 4000
-      });
-
-      const messages = chatRes.data?.data?.messages || [];
-      if (messages.length > 0) {
-        const recentMessages = messages.slice(-10).map(m => `👤 ${m.sender.username}: ${m.content}`).join("\n");
-        chatLogText = `💬 **أحدث رسائل الشات المباشر:**\n\n${recentMessages}`;
-      }
-    }
-  } catch (e) {
-    console.error("Chat Fetch Error:", e.message);
-  }
 
   return res.json({
     meta: {
@@ -163,19 +127,21 @@ app.get("/:config/meta/tv/:id.json", async (req, res) => {
       name: `Kick: ${channelSlug}`,
       poster: `https://ui-avatars.com/api/?name=${channelSlug}&background=0B0E0F&color=53FC18&size=512&bold=true`,
       background: `https://ui-avatars.com/api/?name=${channelSlug}&background=151A1C&color=53FC18&size=1024&bold=true`,
-      description: `${chatLogText}\n\nاختر الجودة أدناه لبدء المشاهدة.`
+      description: `اختر الجودة للتشغيل، ثم فعّل الترجمة من قائمة الترجمات لرؤية الشات.`
     }
   });
 });
 
 /* -------------------------
-   5. Stream Handler (الجودات المتعددة)
+   4. Stream Handler (إضافة خيار الترجمة إلى البث)
 ------------------------- */
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const { id } = req.params;
   if (!id.startsWith("kick:")) return res.json({ streams: [] });
 
   const channelSlug = id.replace("kick:", "").trim().toLowerCase();
+  const host = req.get('host');
+  const protocol = req.protocol;
 
   try {
     const response = await axios.get(`https://kick.com/api/v2/channels/${channelSlug}`, {
@@ -189,87 +155,109 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
     const channelData = response.data;
 
     if (channelData && channelData.playback_url) {
-      const isLive = channelData.livestream !== null;
-      const streamTitle = isLive ? channelData.livestream.session_title : "القناة أوفلاين حالياً";
       const masterPlaylistUrl = channelData.playback_url;
+      const subtitleUrl = `${protocol}://${host}/chat-sub/${channelSlug}.vtt`;
 
-      const streams = [];
-
-      streams.push({
-        name: "🟢 [KICK AUTO]",
-        title: `جودة تلقائية\n${streamTitle}`,
-        url: masterPlaylistUrl
-      });
-
-      try {
-        const playlistRes = await axios.get(masterPlaylistUrl, { timeout: 4000 });
-        const lines = playlistRes.data.split("\n");
-        const baseUrl = masterPlaylistUrl.substring(0, masterPlaylistUrl.lastIndexOf("/") + 1);
-
-        const extractedQualities = [];
-
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].startsWith("#EXT-X-STREAM-INF:")) {
-            const line = lines[i];
-            const nextLine = lines[i + 1] ? lines[i + 1].trim() : "";
-
-            const resMatch = line.match(/RESOLUTION=(\d+x\d+)/);
-            const frameRateMatch = line.match(/FRAME-RATE=([\d\.]+)/);
-
-            let qualityLabel = "HD/SD";
-            let height = 0;
-
-            if (resMatch) {
-              const resParts = resMatch[1].split("x");
-              height = parseInt(resParts[1], 10);
-              const fps = frameRateMatch ? Math.round(parseFloat(frameRateMatch[1])) : 0;
-              qualityLabel = `${height}p${fps > 30 ? fps : ""}`;
-            }
-
-            let streamLink = nextLine;
-            if (!streamLink.startsWith("http")) {
-              streamLink = baseUrl + streamLink;
-            }
-
-            extractedQualities.push({
-              height: height,
-              label: qualityLabel,
-              url: streamLink
-            });
+      return res.json({
+        streams: [
+          {
+            name: "🟢 [KICK LIVE + CHAT]",
+            title: `بث مباشر مع دعم الشات كترجمة\n(فعّل الترجمة أثناء الفيديو)`,
+            url: masterPlaylistUrl,
+            subtitles: [
+              {
+                id: "kick_chat_sub",
+                url: subtitleUrl,
+                lang: "ara"
+              }
+            ]
           }
-        }
-
-        extractedQualities.sort((a, b) => b.height - a.height);
-
-        extractedQualities.forEach(q => {
-          streams.push({
-            name: `🟢 [${q.label}]`,
-            title: `${channelSlug.toUpperCase()} - جودة ${q.label}\n${streamTitle}`,
-            url: q.url
-          });
-        });
-
-      } catch (e) {
-        console.error("Master Playlist Error:", e.message);
-      }
-
-      return res.json({ streams });
+        ]
+      });
     }
 
     return res.json({ streams: [] });
   } catch (error) {
-    console.error("Kick Fetch Error:", error.message);
     res.json({ streams: [] });
   }
 });
 
 /* -------------------------
-   6. تشغيل الخادم
+   5. Subtitles Resource Endpoint (المصدر المستقل للترجمة)
+------------------------- */
+app.get("/:config/subtitles/tv/:id.json", (req, res) => {
+  const { id } = req.params;
+  const channelSlug = id.replace("kick:", "").trim().toLowerCase();
+  const host = req.get('host');
+  const protocol = req.protocol;
+
+  res.json({
+    subtitles: [
+      {
+        id: "kick_chat_sub",
+        url: `${protocol}://${host}/chat-sub/${channelSlug}.vtt`,
+        lang: "💬 Kick Chat"
+      }
+    ]
+  });
+});
+
+/* -------------------------
+   6. Live Chat VTT Generator (توليد ملف الترجمة الحية للشات)
+------------------------- */
+app.get("/chat-sub/:channel.vtt", async (req, res) => {
+  const channelSlug = req.params.channel.toLowerCase();
+
+  try {
+    // 1. جلب ID غرفة الشات
+    const channelRes = await axios.get(`https://kick.com/api/v2/channels/${channelSlug}`, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      timeout: 3000
+    });
+    
+    const chatroomId = channelRes.data?.chatroom?.id;
+    let chatLines = ["💬 جاري تحميل الشات..."];
+
+    if (chatroomId) {
+      const chatRes = await axios.get(`https://kick.com/api/v2/chatrooms/${chatroomId}/messages`, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        timeout: 3000
+      });
+
+      const messages = chatRes.data?.data?.messages || [];
+      if (messages.length > 0) {
+        chatLines = messages.slice(-5).map(m => `${m.sender.username}: ${m.content}`);
+      }
+    }
+
+    // 2. توليد صيغة WebVTT ممتدة لعدة ساعات لتبقي الشات معروضاً أسفل الشاشة
+    const vttContent = `WEBVTT
+
+00:00:00.000 --> 99:59:59.000
+${chatLines.join("\n")}
+`;
+
+    res.setHeader("Content-Type", "text/vtt; charset=utf-8");
+    res.send(vttContent);
+
+  } catch (e) {
+    const fallbackVtt = `WEBVTT
+
+00:00:00.000 --> 99:59:59.000
+💬 يتعذر جلب الشات حالياً
+`;
+    res.setHeader("Content-Type", "text/vtt; charset=utf-8");
+    res.send(fallbackVtt);
+  }
+});
+
+/* -------------------------
+   7. تشغيل الخادم
 ------------------------- */
 app.use((req, res) => {
   res.status(200).json({ streams: [] });
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Kick Addon with Live Chat running on port ${PORT}`);
+  console.log(`🚀 Kick Addon with Live Subtitle Chat running on port ${PORT}`);
 });
