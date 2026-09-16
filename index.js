@@ -18,7 +18,7 @@ app.get(["/", "/configure"], (req, res) => {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>إعدادات إضافة Kick Live Streamer</title>
+    <title>إعدادات إضافة Kick Multi-Quality</title>
     <style>
       body { font-family: system-ui, sans-serif; background: #0b0e0f; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
       .card { background: #151a1c; padding: 30px; border-radius: 16px; width: 90%; max-width: 460px; border: 1px solid #232b2e; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
@@ -33,7 +33,7 @@ app.get(["/", "/configure"], (req, res) => {
   </head>
   <body>
     <div class="card">
-      <h2>🟢 Kick Live Streamer</h2>
+      <h2>🟢 Kick Multi-Quality Streamer</h2>
       <p>أدخل أسماء قنوات Kick (Usernames) مفصولة بفواصل:</p>
       
       <div class="input-group">
@@ -74,16 +74,16 @@ app.get(["/", "/configure"], (req, res) => {
 ------------------------- */
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.live.streamer",
-    version: "1.0.0",
-    name: "Kick Live Streams",
-    description: "متابعة وتحديث البث المباشر لقنوات Kick داخل Stremio",
+    id: "org.kick.live.mq",
+    version: "2.0.0",
+    name: "Kick Live (جميع الجودات)",
+    description: "متابعة البث المباشر لقنوات Kick باختيار الجودة من 1080p إلى 160p",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
     catalogs: [
       {
         type: "tv",
-        id: "kick_live_catalog",
+        id: "kick_mq_catalog",
         name: "🟢 Kick - البث المباشر"
       }
     ],
@@ -94,7 +94,7 @@ app.get("/:config/manifest.json", (req, res) => {
 /* -------------------------
    3. Catalog
 ------------------------- */
-app.get("/:config/catalog/tv/kick_live_catalog.json", (req, res) => {
+app.get("/:config/catalog/tv/kick_mq_catalog.json", (req, res) => {
   const { config } = req.params;
   try {
     const rawChannels = decodeURIComponent(Buffer.from(config, 'base64').toString('utf-8'));
@@ -105,7 +105,7 @@ app.get("/:config/catalog/tv/kick_live_catalog.json", (req, res) => {
       type: "tv",
       name: `Kick: ${channel}`,
       poster: `https://ui-avatars.com/api/?name=${channel}&background=0B0E0F&color=53FC18&size=512&bold=true`,
-      description: `بث مباشر لقناة ${channel} على منصة Kick`
+      description: `بث مباشر لقناة ${channel} على Kick (متعدد الجودات)`
     }));
 
     res.json({ metas });
@@ -130,13 +130,13 @@ app.get("/:config/meta/tv/:id.json", async (req, res) => {
       name: `Kick Channel: ${channelSlug}`,
       poster: `https://ui-avatars.com/api/?name=${channelSlug}&background=0B0E0F&color=53FC18&size=512&bold=true`,
       background: `https://ui-avatars.com/api/?name=${channelSlug}&background=151A1C&color=53FC18&size=1024&bold=true`,
-      description: `صفحة البث المباشر للقناة ${channelSlug}`
+      description: `اختر الجودة المناسبة لبث القناة ${channelSlug}`
     }
   });
 });
 
 /* -------------------------
-   5. Stream Handler (سحب رابط البث المباشر HLS)
+   5. Stream Handler (تفليك وتنسيق الجودات من الأعلى للأدنى)
 ------------------------- */
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const { id } = req.params;
@@ -145,7 +145,6 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const channelSlug = id.replace("kick:", "").trim().toLowerCase();
 
   try {
-    // الاستعلام عن بيانات القناة والبث المباشر عبر Kick API
     const response = await axios.get(`https://kick.com/api/v2/channels/${channelSlug}`, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -159,16 +158,73 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
     if (channelData && channelData.playback_url) {
       const isLive = channelData.livestream !== null;
       const streamTitle = isLive ? channelData.livestream.session_title : "القناة أوفلاين حالياً";
+      const masterPlaylistUrl = channelData.playback_url;
 
-      return res.json({
-        streams: [
-          {
-            name: "🟢 [KICK LIVE]",
-            title: `${channelSlug.toUpperCase()}\n${streamTitle}`,
-            url: channelData.playback_url
-          }
-        ]
+      const streams = [];
+
+      // الخيار التلقائي (Auto)
+      streams.push({
+        name: "🟢 [KICK AUTO]",
+        title: `جودة تلقائية (حسب سرعة النت)\n${streamTitle}`,
+        url: masterPlaylistUrl
       });
+
+      // جلب ملف الـ m3u8 واستخراج الجودات
+      try {
+        const playlistRes = await axios.get(masterPlaylistUrl, { timeout: 4000 });
+        const lines = playlistRes.data.split("\n");
+        const baseUrl = masterPlaylistUrl.substring(0, masterPlaylistUrl.lastIndexOf("/") + 1);
+
+        const extractedQualities = [];
+
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].startsWith("#EXT-X-STREAM-INF:")) {
+            const line = lines[i];
+            const nextLine = lines[i + 1] ? lines[i + 1].trim() : "";
+
+            // استخراج الدقة Resolution
+            const resMatch = line.match(/RESOLUTION=(\d+x\d+)/);
+            const frameRateMatch = line.match(/FRAME-RATE=([\d\.]+)/);
+
+            let qualityLabel = "HD/SD";
+            let height = 0;
+
+            if (resMatch) {
+              const resParts = resMatch[1].split("x");
+              height = parseInt(resParts[1], 10);
+              const fps = frameRateMatch ? Math.round(parseFloat(frameRateMatch[1])) : 0;
+              qualityLabel = `${height}p${fps > 30 ? fps : ""}`;
+            }
+
+            let streamLink = nextLine;
+            if (!streamLink.startsWith("http")) {
+              streamLink = baseUrl + streamLink;
+            }
+
+            extractedQualities.push({
+              height: height,
+              label: qualityLabel,
+              url: streamLink
+            });
+          }
+        }
+
+        // ترتيب الجودات من الأعلى إلى الأدنى
+        extractedQualities.sort((a, b) => b.height - a.height);
+
+        extractedQualities.forEach(q => {
+          streams.push({
+            name: `🟢 [${q.label}]`,
+            title: `${channelSlug.toUpperCase()} - جودة ${q.label}\n${streamTitle}`,
+            url: q.url
+          });
+        });
+
+      } catch (e) {
+        console.error("Master Playlist Parsing Error:", e.message);
+      }
+
+      return res.json({ streams });
     }
 
     return res.json({ streams: [] });
@@ -186,5 +242,5 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Kick Live Addon running on port ${PORT}`);
+  console.log(`🚀 Multi-Quality Kick Addon running on port ${PORT}`);
 });
