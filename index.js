@@ -9,43 +9,109 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 const TORBOX_API_KEY = process.env.TORBOX_API_KEY;
-const TORBOX_API_BASE =
-  process.env.TORBOX_API_BASE || "https://api.torbox.app/v1";
 
 if (!TORBOX_API_KEY) {
   console.warn("⚠️ TORBOX_API_KEY is not configured");
 }
 
 /* -------------------------
-   Helpers
+   1. الواجهة الرئيسية وصفحة التثبيت
 ------------------------- */
+app.get(["/", "/configure"], (req, res) => {
+  const html = `
+  <!DOCTYPE html>
+  <html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TorBox Stremio Addon</title>
+    <style>
+      body { font-family: system-ui, sans-serif; background: #0f0f11; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+      .card { background: #1a1a1e; padding: 30px; border-radius: 16px; width: 90%; max-width: 400px; border: 1px solid #2a2a30; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+      h2 { color: #e50914; margin-bottom: 8px; font-size: 22px; }
+      p { font-size: 14px; color: #aaa; margin-bottom: 25px; line-height: 1.5; }
+      .status { display: inline-block; padding: 6px 12px; background: ${TORBOX_API_KEY ? '#1b4332' : '#4a151b'}; color: ${TORBOX_API_KEY ? '#2ec4b6' : '#e63946'}; border-radius: 20px; font-size: 12px; font-weight: bold; margin-bottom: 20px; }
+      button { width: 100%; padding: 14px; background: #e50914; border: none; color: #fff; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 15px; transition: 0.2s; }
+      button:hover { background: #b80710; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h2>🚀 TorBox Debrid Engine</h2>
+      <div class="status">${TORBOX_API_KEY ? '✔ مفتاح API مرتبط بنجاح' : '✖ المفتاح غير مضاف في Render'}</div>
+      <p>اضغط على الزر أدناه لتثبيت الإضافة مباشرة داخل تطبيق Stremio.</p>
+      <button onclick="install()">تثبيت الإضافة في Stremio</button>
+    </div>
 
-function torboxHeaders() {
-  return {
-    Authorization: `Bearer ${TORBOX_API_KEY}`,
-    Accept: "application/json",
-  };
-}
-
-function emptyStreams(res) {
-  return res.json({ streams: [] });
-}
+    <script>
+      function install() {
+        const manifestUrl = window.location.origin + '/manifest.json';
+        window.location.href = 'stremio://' + manifestUrl.replace(/^https?:\\/\\//, '');
+      }
+    </script>
+  </body>
+  </html>
+  `;
+  res.send(html);
+});
 
 /* -------------------------
-   Home
+   2. Stremio Manifest
 ------------------------- */
-
-app.get("/", (req, res) => {
+app.get("/manifest.json", (req, res) => {
   res.json({
-    name: "TorBox Usenet Stremio Addon",
-    status: "online",
+    id: "org.torbox.debrid.engine",
+    version: "1.0.0",
+    name: "TorBox Engine",
+    description: "تشغيل مباشر للسيرفرات السحابية عبر TorBox",
+    resources: ["stream"],
+    types: ["movie", "series"],
+    idPrefixes: ["tt"]
   });
 });
 
 /* -------------------------
-   Health check
+   3. Stremio Stream Handler
 ------------------------- */
+app.get("/stream/:type/:id.json", async (req, res) => {
+  try {
+    if (!TORBOX_API_KEY) {
+      return res.json({ streams: [] });
+    }
 
+    const { type, id } = req.params;
+
+    // جلب التورنت والمصادر لعنوان IMDb
+    const torrentRes = await axios.get(`https://torrentio.strem.fun/stream/${type}/${id}.json`, { timeout: 5000 }).catch(() => null);
+    
+    if (!torrentRes?.data?.streams) {
+      return res.json({ streams: [] });
+    }
+
+    const streams = [];
+
+    for (const item of torrentRes.data.streams.slice(0, 10)) {
+      if (item.infoHash) {
+        const directUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${TORBOX_API_KEY}&magnet=${encodeURIComponent('magnet:?xt=urn:btih:' + item.infoHash)}&redirect=true`;
+
+        streams.push({
+          name: "[⚡ TorBox]",
+          title: `${item.title || 'Fast Stream'}\n⚡ تشغيل مباشر عبر TorBox`,
+          url: directUrl
+        });
+      }
+    }
+
+    res.json({ streams });
+  } catch (error) {
+    console.error("Stream error:", error.message);
+    res.json({ streams: [] });
+  }
+});
+
+/* -------------------------
+   4. Health check
+------------------------- */
 app.get("/health", (req, res) => {
   res.json({
     ok: true,
@@ -54,283 +120,8 @@ app.get("/health", (req, res) => {
 });
 
 /* -------------------------
-   Stremio Manifest
-------------------------- */
-
-app.get("/manifest.json", (req, res) => {
-  res.json({
-    id: "org.torbox.usenet.private",
-    version: "1.0.0",
-    name: "TorBox Usenet",
-    description:
-      "TorBox Usenet addon for authorized/personal media",
-    resources: [
-      {
-        name: "stream",
-        types: ["movie", "series"],
-        idPrefixes: ["tb:"]
-      }
-    ],
-    types: ["movie", "series"],
-    idPrefixes: ["tb:"],
-    catalogs: []
-  });
-});
-
-/* =========================================================
-   CREATE USENET DOWNLOAD
-
-   POST /api/usenet/add
-
-   Body:
-   {
-     "nzbUrl": "https://example.com/file.nzb",
-     "name": "My File"
-   }
-
-   This is intended for NZB files/URLs you are authorized
-   to access.
-========================================================= */
-
-app.post("/api/usenet/add", async (req, res) => {
-  try {
-    if (!TORBOX_API_KEY) {
-      return res.status(500).json({
-        error: "TORBOX_API_KEY is not configured"
-      });
-    }
-
-    const { nzbUrl, name } = req.body;
-
-    if (!nzbUrl) {
-      return res.status(400).json({
-        error: "nzbUrl is required"
-      });
-    }
-
-    const body = {
-      link: nzbUrl
-    };
-
-    if (name) {
-      body.name = name;
-    }
-
-    const response = await axios.post(
-      `${TORBOX_API_BASE}/api/usenet/createusenetdownload`,
-      body,
-      {
-        headers: {
-          ...torboxHeaders(),
-          "Content-Type": "application/json"
-        },
-        timeout: 30000
-      }
-    );
-
-    res.json({
-      ok: true,
-      data: response.data
-    });
-
-  } catch (error) {
-    console.error(
-      "createusenetdownload:",
-      error.response?.data || error.message
-    );
-
-    res.status(error.response?.status || 500).json({
-      error: "TorBox Usenet creation failed",
-      details: error.response?.data || error.message
-    });
-  }
-});
-
-/* =========================================================
-   USENET LIST
-
-   GET /api/usenet/list
-========================================================= */
-
-app.get("/api/usenet/list", async (req, res) => {
-  try {
-    if (!TORBOX_API_KEY) {
-      return res.status(500).json({
-        error: "TORBOX_API_KEY is not configured"
-      });
-    }
-
-    const response = await axios.get(
-      `${TORBOX_API_BASE}/api/usenet/mylist`,
-      {
-        headers: torboxHeaders(),
-        params: {
-          bypass_cache: "true"
-        },
-        timeout: 15000
-      }
-    );
-
-    res.json(response.data);
-
-  } catch (error) {
-    console.error(
-      "mylist:",
-      error.response?.data || error.message
-    );
-
-    res.status(error.response?.status || 500).json({
-      error: "Unable to get TorBox Usenet list",
-      details: error.response?.data || error.message
-    });
-  }
-});
-
-/* =========================================================
-   GET DOWNLOAD LINK
-
-   GET /api/usenet/link/:usenetId/:fileId
-
-   Redirects the browser/player to TorBox's CDN.
-========================================================= */
-
-app.get(
-  "/api/usenet/link/:usenetId/:fileId",
-  async (req, res) => {
-    try {
-      if (!TORBOX_API_KEY) {
-        return res.status(500).send("TORBOX_API_KEY missing");
-      }
-
-      const { usenetId, fileId } = req.params;
-
-      const response = await axios.get(
-        `${TORBOX_API_BASE}/api/usenet/requestdl`,
-        {
-          headers: {
-            Accept: "*/*"
-          },
-          params: {
-            token: TORBOX_API_KEY,
-            usenet_id: usenetId,
-            file_id: fileId,
-            redirect: "true"
-          },
-          maxRedirects: 0,
-          validateStatus: status =>
-            status >= 200 && status < 400,
-          timeout: 15000
-        }
-      );
-
-      const location =
-        response.headers.location ||
-        response.request?.res?.responseUrl;
-
-      if (location) {
-        return res.redirect(location);
-      }
-
-      if (response.data?.url) {
-        return res.redirect(response.data.url);
-      }
-
-      return res.status(404).send("TorBox download link not ready");
-
-    } catch (error) {
-      console.error(
-        "requestdl:",
-        error.response?.data || error.message
-      );
-
-      res.status(error.response?.status || 500).send(
-        "Unable to create TorBox download link"
-      );
-    }
-  }
-);
-
-/* =========================================================
-   STREMIO STREAM
-
-   This route expects:
-
-   /stream/movie/tb:USENET_ID:FILE_ID.json
-
-   Example:
-
-   /stream/movie/tb:12345:67890.json
-========================================================= */
-
-app.get(
-  "/stream/:type/:id.json",
-  async (req, res) => {
-    try {
-      if (!TORBOX_API_KEY) {
-        return emptyStreams(res);
-      }
-
-      const { type, id } = req.params;
-
-      if (!id.startsWith("tb:")) {
-        return emptyStreams(res);
-      }
-
-      const parts = id.split(":");
-
-      if (parts.length < 3) {
-        return emptyStreams(res);
-      }
-
-      const usenetId = parts[1];
-      const fileId = parts[2];
-
-      if (!usenetId || !fileId) {
-        return emptyStreams(res);
-      }
-
-      const streamUrl =
-        `/api/usenet/link/${encodeURIComponent(
-          usenetId
-        )}/${encodeURIComponent(fileId)}`;
-
-      res.json({
-        streams: [
-          {
-            name: "TorBox Usenet",
-            title:
-              "TorBox Usenet\nAuthorized media",
-            url: streamUrl,
-            behaviorHints: {
-              notWebReady: true
-            }
-          }
-        ]
-      });
-
-    } catch (error) {
-      console.error("stream:", error);
-      return emptyStreams(res);
-    }
-  }
-);
-
-/* -------------------------
-   404
-------------------------- */
-
-app.use((req, res) => {
-  res.status(404).json({
-    error: "Not found"
-  });
-});
-
-/* -------------------------
    Start
 ------------------------- */
-
 app.listen(PORT, () => {
-  console.log(
-    `🚀 TorBox Usenet addon running on port ${PORT}`
-  );
+  console.log(`🚀 TorBox addon running on port ${PORT}`);
 });
