@@ -8,14 +8,59 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 
+// تخزين مؤقت لرسائل الشات لكل قناة
+const chatCache = {};
+
+// دالة لجلب شات Kick وتحويله إلى صيغة WebVTT للترجمة
+async function fetchChatAsSubtitles(channel) {
+  try {
+    // جلب معلومات القناة لمعرفة معرف غرفة الشات (chatroom id)
+    const r = await axios.get(`https://kick.com/api/v2/channels/${channel}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 4000 });
+    const chatroomId = r.data?.chatroom?.id;
+    if (!chatroomId) return "WEBVTT\n\n1\n00:00:00.000 --> 00:00:05.000\n[لا يوجد شات متاح حالياً]";
+
+    // جلب آخر الرسائل من روم الشات
+    const chatRes = await axios.get(`https://kick.com/api/v2/chatrooms/${chatroomId}/messages`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 4000 });
+    const messages = chatRes.data?.data?.messages || [];
+
+    let vtt = "WEBVTT\n\n";
+    let startTime = 0;
+
+    if (messages.length === 0) {
+      vtt += "1\n00:00:00.000 --> 00:10:00.000\n[انتظار رسائل الشات...]\n\n";
+    } else {
+      messages.slice(-15).forEach((msg, index) => {
+        const user = msg.sender?.username || "مستخدم";
+        const text = msg.content || "";
+        const timeSec = index * 3; // توزيع الرسائل زمنياً
+        const start = formatTime(timeSec);
+        const end = formatTime(timeSec + 4);
+        
+        vtt += `${index + 1}\n${start} --> ${end}\n${user}: ${text}\n\n`;
+      });
+    }
+
+    return vtt;
+  } catch (e) {
+    return "WEBVTT\n\n1\n00:00:00.000 --> 00:00:05.000\n[خطأ في جلب الشات]";
+  }
+}
+
+function formatTime(totalSeconds) {
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+  const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+  const seconds = String(totalSeconds % 60).padStart(2, '0');
+  return `${hours}:${minutes}:${seconds}.000`;
+}
+
 app.get(["/", "/configure"], (req, res) => {
   res.send(`
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
-  <head><meta charset="UTF-8"><title>Kick Addon</title></head>
+  <head><meta charset="UTF-8"><title>Kick Chat Addon</title></head>
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
-    <h2>🟢 Kick Live Addon</h2>
-    <p>أدخل أسماء قنوات Kick مفصولة بفواصل:</p>
+    <h2>🟢 Kick Chat Subtitles Addon</h2>
+    <p>أدخل أسماء قنوات Kick لعرض الشات كترجمة:</p>
     <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;"></textarea><br><br>
     <button onclick="ins()" style="padding:10px 20px;background:#53fc18;border:none;font-weight:bold;cursor:pointer;">تثبيت في Stremio</button>
     <script>
@@ -33,13 +78,13 @@ app.get(["/", "/configure"], (req, res) => {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.live.fixed",
-    version: "6.0.0",
-    name: "Kick Live Stream",
-    description: "بث مباشر قنوات Kick مع الجودات",
+    id: "org.kick.chat.subtitles",
+    version: "8.0.0",
+    name: "Kick Chat as Subtitles",
+    description: "بث مباشر مع شات يظهر كترجمة في Stremio",
     resources: ["catalog", "meta", "stream", "subtitles"],
     types: ["tv"],
-    catalogs: [{ type: "tv", id: "kick_cat", name: "🟢 Kick Live" }],
+    catalogs: [{ type: "tv", id: "kick_cat", name: "🟢 Kick Chat Live" }],
     idPrefixes: ["kick:"]
   });
 });
@@ -56,18 +101,37 @@ app.get("/:config/meta/tv/:id.json", (req, res) => {
   res.json({ meta: { id: `kick:${c}`, type: "tv", name: `Kick: ${c}`, poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18` } });
 });
 
+// نقطة نهاية خاصة لتزويد Stremio بملف الترجمة (الشات)
+app.get("/:config/subtitles/tv/:id.json", async (req, res) => {
+  const c = req.params.id.replace("kick:", "").trim();
+  const vttData = await fetchChatAsSubtitles(c);
+  
+  res.json({
+    subtitles: [
+      {
+        id: `chat_${c}`,
+        url: `data:text/vtt;base64,${Buffer.from(vttData).toString('base64')}`,
+        lang: "ara",
+        name: "💬 شات Kick (مباشر)"
+      }
+    ]
+  });
+});
+
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const c = req.params.id.replace("kick:", "").trim();
-  const host = req.get('host');
-  const proto = req.protocol;
 
   try {
     const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
     const pb = r.data?.playback_url;
     if (!pb) return res.json({ streams: [] });
 
-    const sub = { id: "sub", url: `${proto}://${host}/sub/${c}.vtt`, lang: "ara" };
-    const streams = [{ name: "🟢 [KICK AUTO]", title: "جودة تلقائية", url: pb, subtitles: [sub] }];
+    const streams = [{ 
+      name: "🟢 [KICK CHAT]", 
+      title: `قناة: ${c.toUpperCase()} | (فعّل الترجمة لرؤية الشات)`, 
+      url: pb,
+      behaviorHints: { notWebReady: true }
+    }];
 
     try {
       const pRes = await axios.get(pb, { timeout: 3000 });
@@ -77,10 +141,17 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
       lines.forEach((l, i) => {
         if (l.startsWith("#EXT-X-STREAM-INF:")) {
           const resM = l.match(/RESOLUTION=(\d+x\d+)/);
-          const h = resM ? resM[1].split("x")[1] : "HD";
+          const h = resM ? resM.1.split("x")[1] : "HD";
           let u = lines[i+1]?.trim();
           if (u && !u.startsWith("http")) u = base + u;
-          if (u) streams.push({ name: `🟢 [${h}p]`, title: `جودة ${h}p`, url: u, subtitles: [sub] });
+          if (u) {
+            streams.push({ 
+              name: `🟢 [${h}p]`, 
+              title: `جودة ${h}p | (فعّل الترجمة لرؤية الشات)`, 
+              url: u,
+              behaviorHints: { notWebReady: true }
+            });
+          }
         }
       });
     } catch(err) {}
@@ -89,20 +160,6 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
   } catch(e) {
     res.json({ streams: [] });
   }
-});
-
-app.get("/:config/subtitles/tv/:id.json", (req, res) => {
-  const c = req.params.id.replace("kick:", "");
-  res.json({ subtitles: [{ id: "sub", url: `${req.protocol}://${req.get('host')}/sub/${c}.vtt`, lang: "ara" }] });
-});
-
-app.get("/sub/:channel.vtt", (req, res) => {
-  res.setHeader("Content-Type", "text/vtt; charset=utf-8");
-  res.send(`WEBVTT
-
-00:00:00.000 --> 99:59:59.000
-💬 قناة: ${req.params.channel.toUpperCase()} (البث المباشر يعمل)
-`);
 });
 
 app.listen(PORT);
