@@ -8,6 +8,13 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 
+// هيدرز الكيك المطلوبة لتشغيل ملفات HLS
+const KICK_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Referer": "https://kick.com/",
+  "Origin": "https://kick.com"
+};
+
 /* -------------------------
    1. صفحة الإعدادات
 ------------------------- */
@@ -75,9 +82,9 @@ app.get(["/", "/configure"], (req, res) => {
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
     id: "org.kick.custom.following",
-    version: "2.0.0",
+    version: "2.1.0",
     name: "Kick - متابعاتك",
-    description: "تشغيل بثوث وإعادات Kick المباشرة",
+    description: "تشغيل بثوث وإعادات Kick المباشرة مع دعم الهيدرز",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
     catalogs: [
@@ -136,7 +143,7 @@ app.get("/:config/meta/tv/:id.json", async (req, res) => {
 });
 
 /* -------------------------
-   5. Stream Handler (روابط مباشرة ومفتوحة دائماً)
+   5. Stream Handler (مع تمرير الهيدرز)
 ------------------------- */
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const { id } = req.params;
@@ -145,24 +152,30 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const channelName = id.replace("kick:", "").trim().toLowerCase();
   const streams = [];
 
-  // 1. رابط البث المباشر المباشر بدون قيود API
+  // 1. رابط HLS المباشر المرفق مع HTTP Headers لتجاوز الحماية
   streams.push({
-    name: "[🟢 LIVE / STREAM]",
-    title: `تشغيل البث المباشر لقناة ${channelName.toUpperCase()}`,
-    url: `https://fa781e646eb2.entrypoint.cloud.vlive.cc/kick/${channelName}/index.m3u8`
+    name: "[🟢 LIVE / HLS DIRECT]",
+    title: `تشغيل البث المباشر للقناة (${channelName})`,
+    url: `https://stream.kick.com/play/${channelName}.m3u8`,
+    behaviorHints: {
+      notSupported: false,
+      proxyHeaders: {
+        request: KICK_HEADERS
+      }
+    }
   });
 
-  // 2. رابط الإعادة المباشرة (النسخة المسجلة الأخيرة)
+  // 2. رابط بروكسي لتجاوز الحظر في حال فشل المشغل الداخلي
   streams.push({
-    name: "[🎬 LAST VOD REPLAY]",
-    title: `تشغيل آخر إعادة مسجلة للقناة (${channelName})`,
-    url: `https://kick-vod-proxy.stremio.workers.dev/${channelName}/latest.m3u8`
+    name: "[⚡ PROXY STREAM]",
+    title: `تشغيل عبر سيرفر وسيط (تجاوز الحماية)`,
+    url: `https://m3u8-proxy.vlive.workers.dev/?url=${encodeURIComponent(`https://stream.kick.com/play/${channelName}.m3u8`)}`
   });
 
-  // 3. خيار احتياطي يضمن الفتح في مشغل داخلي أو خارجي
+  // 3. فتح الإعادة مباشرة في تطبيق/موقع Kick
   streams.push({
-    name: "[🌐 OPEN KICK VODS]",
-    title: `تصفح كل الإعادات والـ Clips لقناة ${channelName}`,
+    name: "[🎬 KICK APP / VODS]",
+    title: `فتح الإعادات والـ Clips في تطبيق Kick`,
     externalUrl: `https://kick.com/${channelName}/videos`
   });
 
