@@ -9,7 +9,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 7000;
 
 /* -------------------------
-   1. صفحة تعديل وإعدادات الإضافة
+   1. صفحة التثبيت والإعدادات
 ------------------------- */
 app.get(["/", "/configure"], (req, res) => {
   const html = `
@@ -27,21 +27,21 @@ app.get(["/", "/configure"], (req, res) => {
       .input-group { text-align: right; margin-bottom: 15px; }
       label { font-size: 13px; color: #ccc; display: block; margin-bottom: 6px; }
       textarea { width: 100%; padding: 12px; background: #0f0f11; border: 1px solid #333; color: #fff; border-radius: 8px; box-sizing: border-box; resize: vertical; min-height: 80px; font-family: inherit; }
-      button { width: 100%; padding: 14px; background: #53fc18; border: none; color: #000; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 15px; transition: 0.2s; }
+      button { width: 100%; padding: 14px; background: #53fc18; border: none; color: #000; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 15px; }
       button:hover { background: #42cb12; }
     </style>
   </head>
   <body>
     <div class="card">
       <h2>🟢 Kick Stremio Config</h2>
-      <p>أدخل أسماء القنوات التي تتابعها في Kick (مفصولة بفواصل) لتظهر في كتالوج Stremio الخاص بك.</p>
+      <p>أدخل أسماء القنوات مفصولة بفواصل (مثل: xqc, adinross):</p>
       
       <div class="input-group">
         <label>أسماء القنوات (Usernames):</label>
-        <textarea id="channels" placeholder="xqc, adinross, trainwreckstv"></textarea>
+        <textarea id="channels" placeholder="xqc, adinross"></textarea>
       </div>
 
-      <button onclick="install()">تثبيت / تحديث الإضافة في Stremio</button>
+      <button onclick="install()">تثبيت الإضافة في Stremio</button>
     </div>
 
     <script>
@@ -52,7 +52,6 @@ app.get(["/", "/configure"], (req, res) => {
           return;
         }
         
-        // تنظيف المدخلات وتحويلها إلى قائمة مفصولة
         const channelsList = input.split(',').map(c => c.trim().toLowerCase()).filter(Boolean).join(',');
         const encodedConfig = btoa(encodeURIComponent(channelsList));
 
@@ -67,15 +66,15 @@ app.get(["/", "/configure"], (req, res) => {
 });
 
 /* -------------------------
-   2. Manifest الديناميكي
+   2. Manifest التفاعلي
 ------------------------- */
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
     id: "org.kick.custom.following",
-    version: "1.3.0",
-    name: "Kick - متابعاتك المباشرة",
-    description: "بثوث وإعادات قنواتك المتابعة على منصة Kick",
-    resources: ["catalog", "stream"],
+    version: "1.4.0",
+    name: "Kick - قنواتك المتابعة",
+    description: "بثوث وإعادات قنوات Kick المتابعة",
+    resources: ["catalog", "meta", "stream"],
     types: ["tv"],
     catalogs: [
       {
@@ -89,7 +88,7 @@ app.get("/:config/manifest.json", (req, res) => {
 });
 
 /* -------------------------
-   3. الكتالوج (Catalog) لعرض القنوات المتابعة
+   3. الكتالوج (Catalog)
 ------------------------- */
 app.get("/:config/catalog/tv/kick_following.json", (req, res) => {
   const { config } = req.params;
@@ -101,9 +100,9 @@ app.get("/:config/catalog/tv/kick_following.json", (req, res) => {
     const metas = channelArray.map(channel => ({
       id: `kick:${channel}`,
       type: "tv",
-      name: channel,
+      name: channel.toUpperCase(),
       poster: `https://ui-avatars.com/api/?name=${channel}&background=0D0E12&color=53FC18&size=512&bold=true`,
-      description: `قناة ${channel} على منصة Kick`
+      description: `صفحة بث وإعادة قناة ${channel} على منصة Kick`
     }));
 
     res.json({ metas });
@@ -113,7 +112,31 @@ app.get("/:config/catalog/tv/kick_following.json", (req, res) => {
 });
 
 /* -------------------------
-   4. Stream Handler (مباشر + إعادة)
+   4. معالج البيانات الوصفية (Meta Handler) - حل المشكلة الأساسية
+------------------------- */
+app.get("/:config/meta/tv/:id.json", async (req, res) => {
+  const { id } = req.params;
+
+  if (!id.startsWith("kick:")) {
+    return res.json({ meta: {} });
+  }
+
+  const channelName = id.replace("kick:", "").trim().toLowerCase();
+
+  const meta = {
+    id: `kick:${channelName}`,
+    type: "tv",
+    name: channelName.toUpperCase(),
+    poster: `https://ui-avatars.com/api/?name=${channelName}&background=0D0E12&color=53FC18&size=512&bold=true`,
+    background: `https://ui-avatars.com/api/?name=${channelName}&background=0D0E12&color=53FC18&size=1024&bold=true`,
+    description: `بث مباشر وإعادة تسجيل لقناة ${channelName} على منصة Kick`
+  };
+
+  return res.json({ meta });
+});
+
+/* -------------------------
+   5. Stream Handler (مباشر + إعادة)
 ------------------------- */
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const { id } = req.params;
@@ -136,16 +159,16 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
     if (channelRes?.data) {
       const channelData = channelRes.data;
 
-      // أ) خيار البث المباشر
+      // أ) رابط البث المباشر
       if (channelData.livestream && channelData.playback_url) {
         streams.push({
           name: "[🟢 KICK LIVE]",
-          title: `مباشر الآن: ${channelData.user.username}\n🎮 ${channelData.livestream.session_title || 'بث مباشر'}`,
+          title: `مباشر الان: ${channelData.user.username}\n🎮 ${channelData.livestream.session_title || 'بث مباشر'}`,
           url: channelData.playback_url
         });
       }
 
-      // ب) خيار الإعادة (VOD)
+      // ب) رابط إعادة البث (VOD)
       if (channelData.previous_livestreams && channelData.previous_livestreams.length > 0) {
         const latestVod = channelData.previous_livestreams[0];
         if (latestVod.video && latestVod.video.video_url) {
@@ -174,12 +197,12 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
 });
 
 /* -------------------------
-   5. تشغيل السيرفر
+   6. تشغيل الخادم
 ------------------------- */
 app.use((req, res) => {
   res.status(200).json({ streams: [] });
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Kick Custom Addon running on port ${PORT}`);
+  console.log(`🚀 Kick Custom Addon with Meta Support running on port ${PORT}`);
 });
