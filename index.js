@@ -33,10 +33,10 @@ app.get(["/", "/configure"], (req, res) => {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.live.vods.merged",
-    version: "13.0.0",
+    id: "org.kick.live.vods.guaranteed",
+    version: "14.0.0",
     name: "Kick Live & VODs",
-    description: "البث المباشر والإعادات المسجلة في مكان واحد",
+    description: "البث المباشر والإعادات المسجلة",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
     catalogs: [{ type: "tv", id: "kick_cat", name: "🟢 Kick Channels" }],
@@ -53,7 +53,7 @@ app.get("/:config/catalog/tv/kick_cat.json", (req, res) => {
         type: "tv",
         name: `Kick: ${c.toUpperCase()}`,
         poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-        description: `البث المباشر والإعادات المسجلة لقناة ${c}`
+        description: `قناة ${c} - البث المباشر والإعادات`
       }))
     });
   } catch(e) {
@@ -69,7 +69,7 @@ app.get("/:config/meta/tv/:id.json", (req, res) => {
       type: "tv",
       name: `Kick: ${c.toUpperCase()}`,
       poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-      description: "اضغط لمشاهدة البث المباشر أو الإعادات المسجلة"
+      description: "اضغط لعرض البث المباشر وخيارات الإعادة المسجلة"
     }
   });
 });
@@ -79,12 +79,12 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const streams = [];
 
   try {
-    // 1. جلب البث المباشر والجودات
+    // 1. جلب البث المباشر الأساسي
     const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
     const pb = r.data?.playback_url;
     
     if (pb) {
-      streams.push({ name: "🟢 [LIVE AUTO]", title: `قناة: ${c.toUpperCase()} | البث المباشر التلقائي`, url: pb });
+      streams.push({ name: "🟢 [LIVE AUTO]", title: `قناة: ${c.toUpperCase()} | البث المباشر الأساسي`, url: pb });
       try {
         const pRes = await axios.get(pb, { timeout: 3000 });
         const lines = pRes.data.split("\n");
@@ -102,17 +102,26 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
       } catch(err) {}
     }
 
-    // 2. جلب الإعادات المسجلة (VODs) وإضافتها كروابط في نفس القائمة
+    // 2. التحقق من وجود إعادات حقيقية، وإن لم توجد نضيف خيار إعادة توجيه يضمن ظهور خانة الإعادة
     const pastStreams = r.data?.previous_livestreams || [];
-    pastStreams.forEach((vod, index) => {
-      if (vod.video_url) {
-        streams.push({
-          name: `📼 [إعادة ${index + 1}]`,
-          title: vod.session_title || `إعادة بث مسجلة رقم ${index + 1}`,
-          url: vod.video_url
-        });
-      }
-    });
+    if (pastStreams.length > 0) {
+      pastStreams.forEach((vod, index) => {
+        if (vod.video_url) {
+          streams.push({
+            name: `📼 [إعادة ${index + 1}]`,
+            title: vod.session_title || `إعادة مسجلة رقم ${index + 1}`,
+            url: vod.video_url
+          });
+        }
+      });
+    } else {
+      // خيار إضافي يظهر للمستخدم ليؤكد أن النظام جاهز للإعادات فور توفرها من القناة
+      streams.push({
+        name: "📼 [إعادة البث]",
+        title: `قناة: ${c.toUpperCase()} | (لا توجد إعادات مسجلة حالياً من المنصة)`,
+        url: pb || "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
+      });
+    }
 
     res.json({ streams });
   } catch(e) {
