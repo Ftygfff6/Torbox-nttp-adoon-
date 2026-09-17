@@ -12,9 +12,9 @@ app.get("/", (req, res) => {
   res.send(`
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
-  <head><meta charset="UTF-8"><title>Kick Addon Config</title></head>
+  <head><meta charset="UTF-8"><title>Kick Interactive Live</title></head>
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
-    <h2>🟢 إعدادات إضافة Kick (البث والإعادات المباشرة)</h2>
+    <h2>🟢 إعدادات إضافة Kick التفاعلية</h2>
     <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
     <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;"></textarea><br><br>
     <button onclick="ins()" style="padding:10px 20px;background:#53fc18;border:none;font-weight:bold;cursor:pointer;">تثبيت في التطبيق</button>
@@ -37,18 +37,18 @@ app.get("/configure", (req, res) => {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.inapp.vods",
-    version: "18.0.0",
-    name: "Kick Live & In-App VODs",
-    description: "البث المباشر والإعادات المسجلة داخل المشغل مباشرة",
+    id: "org.kick.interactive.live",
+    version: "20.0.0",
+    name: "Kick Interactive Live",
+    description: "البث المباشر لقنوات Kick مع تفاعل متقدم وحالة البث",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
-    catalogs: [{ type: "tv", id: "kick_cat", name: "🟢 Kick Channels" }],
+    catalogs: [{ type: "tv", id: "kick_interactive_cat", name: "🟢 Kick Interactive" }],
     idPrefixes: ["kick:"]
   });
 });
 
-app.get("/:config/catalog/tv/kick_cat.json", (req, res) => {
+app.get("/:config/catalog/tv/kick_interactive_cat.json", (req, res) => {
   try {
     const channels = decodeURIComponent(Buffer.from(req.params.config, 'base64').toString('utf-8')).split(',');
     res.json({
@@ -56,8 +56,8 @@ app.get("/:config/catalog/tv/kick_cat.json", (req, res) => {
         id: `kick:${c}`,
         type: "tv",
         name: `Kick: ${c.toUpperCase()}`,
-        poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-        description: `قناة ${c} - مشاهدة البث والإعادات داخل المشغل`
+        poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
+        description: `بث مباشر تفاعلي لقناة ${c.toUpperCase()} - اضغط للعرض الفوري.`
       }))
     });
   } catch(e) {
@@ -72,8 +72,8 @@ app.get("/:config/meta/tv/:id.json", (req, res) => {
       id: `kick:${c}`,
       type: "tv",
       name: `Kick: ${c.toUpperCase()}`,
-      poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-      description: "اختر البث أو الإعادة المسجلة لتشتغل معك فوراً داخل التطبيق"
+      poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
+      description: "اضغط على خيار البث المباشر أدناه للتشغيل الفوري مع جودات متعددة وحالة اتصال لحظية."
     }
   });
 });
@@ -84,41 +84,48 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
 
   try {
     const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
-    
-    // 1. جلب البث المباشر
     const pb = r.data?.playback_url;
-    if (pb) {
-      streams.push({ 
-        name: "🟢 [LIVE AUTO]", 
-        title: `قناة: ${c.toUpperCase()} | البث المباشر`, 
-        url: pb 
-      });
-    }
-
-    // 2. محاولة جلب أحدث إعادة مسجلة (VOD) وتشغيلها مباشرة داخل التطبيق
-    const pastStreams = r.data?.previous_livestreams || [];
-    if (pastStreams.length > 0) {
-      const latestVod = pastStreams[0]; // أحدث إعادة
-      const vodUrl = latestVod.video_url || latestVod.source || latestVod.playback_url;
-      
-      if (vodUrl) {
-        streams.push({
-          name: "📼 [إعادة البث الأخيرة]",
-          title: latestVod.session_title ? `إعادة: ${latestVod.session_title}` : `آخر إعادة مسجلة للقناة`,
-          url: vodUrl,
-          behaviorHints: { notWebReady: true }
-        });
-      }
-    }
-
-    // إذا لم تتوفر إعادة حقيقية من السيرفر، نترك الخيار جاهزاً ومربوطاً بطلب الوسيط
-    if (streams.length === (pb ? 1 : 0)) {
+    const isLive = r.data?.livestream !== null && r.data?.livestream !== undefined;
+    
+    if (!pb || !isLive) {
+      // خيار تفاعلي يخبرك بأن القناة غير متصلة حالياً بدلاً من إرجاع قائمة فارغة
       streams.push({
-        name: "📼 [إعادة البث]",
-        title: `قناة: ${c.toUpperCase()} | (جارِ البحث عن أحدث إعادة مسجلة...)`,
-        url: pb || "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        name: "🔴 [البث متوقف]",
+        title: `قناة ${c.toUpperCase()} غير متصلة بالبث المباشر حالياً.`,
+        url: "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
       });
+      return res.json({ streams });
     }
+
+    // 1. خيار التشغيل السريع التلقائي
+    streams.push({ 
+      name: "🟢 [LIVE - تشغيل سريع]", 
+      title: `قناة: ${c.toUpperCase()} | البث المباشر الأساسي`, 
+      url: pb 
+    });
+
+    // 2. تحليل الجودات وإضافتها بتنسيق تفاعلي
+    try {
+      const pRes = await axios.get(pb, { timeout: 3000 });
+      const lines = pRes.data.split("\n");
+      const base = pb.substring(0, pb.lastIndexOf("/") + 1);
+      
+      lines.forEach((l, i) => {
+        if (l.startsWith("#EXT-X-STREAM-INF:")) {
+          const resM = l.match(/RESOLUTION=(\d+x\d+)/);
+          const h = resM ? resM[1].split("x")[1] : "HD";
+          let u = lines[i+1]?.trim();
+          if (u && !u.startsWith("http")) u = base + u;
+          if (u) {
+            streams.push({ 
+              name: `🟢 [دقة ${h}p]`, 
+              title: `بث مباشر بجودة ${h}p | قناة: ${c.toUpperCase()}`, 
+              url: u 
+            });
+          }
+        }
+      });
+    } catch(err) {}
 
     res.json({ streams });
   } catch(e) {
