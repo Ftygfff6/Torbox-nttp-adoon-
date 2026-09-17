@@ -12,9 +12,9 @@ app.get("/", (req, res) => {
   res.send(`
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
-  <head><meta charset="UTF-8"><title>Kick Multi-View Addon</title></head>
+  <head><meta charset="UTF-8"><title>Kick Custom Multi-View</title></head>
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
-    <h2>🟢 إعدادات إضافة Kick (البث المزدوج - Multi-View)</h2>
+    <h2>🟢 إعدادات إضافة Kick (اختيار البث المزدوج)</h2>
     <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
     <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;"></textarea><br><br>
     <button onclick="ins()" style="padding:10px 20px;background:#53fc18;border:none;font-weight:bold;cursor:pointer;">تثبيت في التطبيق</button>
@@ -37,27 +37,27 @@ app.get("/configure", (req, res) => {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.multiview",
-    version: "21.0.0",
-    name: "Kick Multi-View Live",
-    description: "البث المباشر لقنوات Kick مع ميزة تقسيم الشاشة (بثين في وقت واحد)",
+    id: "org.kick.custom.multiview",
+    version: "22.0.0",
+    name: "Kick Custom Multi-View",
+    description: "اختر البثين بنفسك للتقسيم المزدوج للشاشة",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
-    catalogs: [{ type: "tv", id: "kick_multi_cat", name: "🟢 Kick Multi-View" }],
+    catalogs: [{ type: "tv", id: "kick_custom_cat", name: "🟢 Kick Multi-View Picker" }],
     idPrefixes: ["kick:"]
   });
 });
 
-app.get("/:config/catalog/tv/kick_multi_cat.json", (req, res) => {
+app.get("/:config/catalog/tv/kick_custom_cat.json", (req, res) => {
   try {
     const channels = decodeURIComponent(Buffer.from(req.params.config, 'base64').toString('utf-8')).split(',');
     res.json({
       metas: channels.map(c => ({
         id: `kick:${c}`,
         type: "tv",
-        name: `Kick Multi: ${c.toUpperCase()}`,
+        name: `Kick: ${c.toUpperCase()}`,
         poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-        description: `شاهد قناة ${c.toUpperCase()} مع خيار التقسيم المزدوج للبثوث.`
+        description: `اضغط لاختيار هذه القناة ودمجها مع أي بث آخر تفضله.`
       }))
     });
   } catch(e) {
@@ -71,14 +71,14 @@ app.get("/:config/meta/tv/:id.json", (req, res) => {
     meta: {
       id: `kick:${c}`,
       type: "tv",
-      name: `Kick Multi: ${c.toUpperCase()}`,
+      name: `Kick: ${c.toUpperCase()}`,
       poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-      description: "يحتوي على خيار البث الفردي وخيار تشغيل (بثين في شاشة واحدة / Multi-View)."
+      description: "ستجد أدناه خيار البث الفردي، وخيارات مستقلة لدمج هذه القناة مع أي قناة أخرى أدخلتها في قائمتك حسب رغبتك."
     }
   });
 });
 
-// صفحة البث المزدوج (Multi-View Web Player) التي تعرض بثين جنباً إلى جنب
+// صفحة البث المزدوج (Multi-View Web Player)
 app.get("/multiview/:ch1/:ch2", async (req, res) => {
   const { ch1, ch2 } = req.params;
   try {
@@ -93,7 +93,7 @@ app.get("/multiview/:ch1/:ch2", async (req, res) => {
       <html lang="ar" dir="rtl">
       <head>
         <meta charset="UTF-8">
-        <title>Kick Multi-View: ${ch1} vs ${ch2}</title>
+        <title>Multi-View: ${ch1} & ${ch2}</title>
         <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
         <style>
           body { margin: 0; background: #000; color: #fff; font-family: sans-serif; display: flex; height: 100vh; overflow: hidden; }
@@ -109,7 +109,7 @@ app.get("/multiview/:ch1/:ch2", async (req, res) => {
         </div>
         <div class="pane">
           <div class="label">🟢 ${ch2.toUpperCase()}</div>
-          <video id="v2" controls autoplay muted></video>
+          <video id="v2" controls autoplay></video>
         </div>
         <script>
           function loadStream(vidId, url) {
@@ -130,7 +130,7 @@ app.get("/multiview/:ch1/:ch2", async (req, res) => {
       </html>
     `);
   } catch(e) {
-    res.send("<h3>عذراً، حدث خطأ أثناء جلب البثين المزدوجين. تأكد من أن القنوات تبث حالياً.</h3>");
+    res.send("<h3>عذراً، حدث خطأ أثناء تحميل البثين.</h3>");
   }
 });
 
@@ -146,7 +146,7 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
     const pb = r.data?.playback_url;
     
     if (pb) {
-      // 1. خيار البث الفردي العادي
+      // 1. البث الفردي الأساسي
       streams.push({ 
         name: "🟢 [بث فردي]", 
         title: `قناة: ${c.toUpperCase()} | البث المباشر`, 
@@ -154,19 +154,19 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
       });
     }
 
-    // 2. خيار البث المزدوج (إذا كانت هناك قناة أخرى في القائمة نقوم بدمجها معها كشاشة مقسمة)
-    if (channels.length > 1) {
-      const secondChan = channels.find(x => x !== c) || channels[0];
-      const host = req.get('host');
-      const protocol = req.protocol;
-      
-      streams.push({
-        name: "🔲 [شاشة مقسمة Multi-View]",
-        title: `عرض ${c.toUpperCase()} بجانب ${secondChan.toUpperCase()} في نفس الشاشة`,
-        url: `${protocol}://${host}/multiview/${c}/${secondChan}`,
-        behaviorHints: { notWebReady: true }
-      });
-    }
+    // 2. خيارات تفاعلية تتيح لك اختيار القناة الثانية التي تريد دمجها معها صراحة
+    channels.forEach(otherChan => {
+      if (otherChan !== c) {
+        const host = req.get('host');
+        const protocol = req.protocol;
+        streams.push({
+          name: `🔲 [دمج مع: ${otherChan.toUpperCase()}]`,
+          title: `عرض شاشة مقسمة تجمع بين (${c.toUpperCase()}) و (${otherChan.toUpperCase()})`,
+          url: `${protocol}://${host}/multiview/${c}/${otherChan}`,
+          behaviorHints: { notWebReady: true }
+        });
+      }
+    });
 
     res.json({ streams });
   } catch(e) {
