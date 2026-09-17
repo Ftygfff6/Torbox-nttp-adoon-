@@ -12,7 +12,7 @@ app.get(["/", "/configure"], (req, res) => {
   res.send(`
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
-  <head><meta charset="UTF-8"><title>Kick VODs Addon</title></head>
+  <head><meta charset="UTF-8"><title>Kick Live & VODs</title></head>
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
     <h2>🟢 Kick Live & VODs Addon</h2>
     <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
@@ -33,139 +33,86 @@ app.get(["/", "/configure"], (req, res) => {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.vods.fixed",
-    version: "12.0.0",
+    id: "org.kick.live.vods.merged",
+    version: "13.0.0",
     name: "Kick Live & VODs",
-    description: "بث مباشر وإعادات قنوات Kick",
+    description: "البث المباشر والإعادات المسجلة في مكان واحد",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
-    catalogs: [
-      { type: "tv", id: "kick_live_cat", name: "🟢 Kick - البث المباشر" },
-      { type: "tv", id: "kick_vods_cat", name: "📼 Kick - الإعادات المسجلة" }
-    ],
+    catalogs: [{ type: "tv", id: "kick_cat", name: "🟢 Kick Channels" }],
     idPrefixes: ["kick:"]
   });
 });
 
-app.get("/:config/catalog/tv/:id.json", async (req, res) => {
-  const { config, id } = req.params;
+app.get("/:config/catalog/tv/kick_cat.json", (req, res) => {
   try {
-    const channels = decodeURIComponent(Buffer.from(config, 'base64').toString('utf-8')).split(',');
-    const metas = [];
-
-    for (const c of channels) {
-      try {
-        const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 4000 });
-        
-        if (id === "kick_vods_cat") {
-          const pastStreams = r.data?.previous_livestreams || [];
-          if (pastStreams.length > 0) {
-            pastStreams.forEach((vod, idx) => {
-              metas.push({
-                id: `kick_vod:${c}:${vod.id || idx}`,
-                type: "tv",
-                name: `${c.toUpperCase()} (إعادة)`,
-                poster: vod.thumbnail?.url || `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-                description: vod.session_title || 'إعادة بث مسجلة'
-              });
-            });
-          }
-        } else {
-          metas.push({
-            id: `kick:${c}`,
-            type: "tv",
-            name: `Kick Live: ${c}`,
-            poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-            description: `بث مباشر لقناة ${c}`
-          });
-        }
-      } catch (err) {}
-    }
-
-    res.json({ metas });
-  } catch(e) { 
-    res.json({ metas: [] }); 
+    const channels = decodeURIComponent(Buffer.from(req.params.config, 'base64').toString('utf-8')).split(',');
+    res.json({
+      metas: channels.map(c => ({
+        id: `kick:${c}`,
+        type: "tv",
+        name: `Kick: ${c.toUpperCase()}`,
+        poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
+        description: `البث المباشر والإعادات المسجلة لقناة ${c}`
+      }))
+    });
+  } catch(e) {
+    res.json({ metas: [] });
   }
 });
 
-app.get("/:config/meta/tv/:id.json", async (req, res) => {
-  const id = req.params.id;
-  
-  if (id.startsWith("kick_vod:")) {
-    const parts = id.split(":");
-    const c = parts[1];
-    return res.json({
-      meta: {
-        id: id,
-        type: "tv",
-        name: `${c.toUpperCase()} - إعادة بث`,
-        poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-        description: "عرض إعادات البث المسجلة من Kick"
-      }
-    });
-  }
-
-  const c = id.replace("kick:", "");
-  res.json({ 
-    meta: { 
-      id: `kick:${c}`, 
-      type: "tv", 
-      name: `Kick Live: ${c}`, 
-      poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18` 
-    } 
+app.get("/:config/meta/tv/:id.json", (req, res) => {
+  const c = req.params.id.replace("kick:", "");
+  res.json({
+    meta: {
+      id: `kick:${c}`,
+      type: "tv",
+      name: `Kick: ${c.toUpperCase()}`,
+      poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
+      description: "اضغط لمشاهدة البث المباشر أو الإعادات المسجلة"
+    }
   });
 });
 
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
-  const id = req.params.id;
+  const c = req.params.id.replace("kick:", "").trim();
+  const streams = [];
 
-  if (id.startsWith("kick_vod:")) {
-    const parts = id.split(":");
-    const c = parts[1];
-    const vodId = parts[2];
-
-    try {
-      const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
-      const pastStreams = r.data?.previous_livestreams || [];
-      const targetVod = pastStreams.find(v => String(v.id) === String(vodId)) || pastStreams[0];
-
-      if (targetVod && targetVod.video_url) {
-        return res.json({
-          streams: [{
-            name: "📼 [Kick VOD]",
-            title: `إعادة: ${targetVod.session_title || c}`,
-            url: targetVod.video_url
-          }]
-        });
-      }
-    } catch (e) {}
-
-    return res.json({ streams: [] });
-  }
-
-  const c = id.replace("kick:", "").trim();
   try {
+    // 1. جلب البث المباشر والجودات
     const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
     const pb = r.data?.playback_url;
-    if (!pb) return res.json({ streams: [] });
+    
+    if (pb) {
+      streams.push({ name: "🟢 [LIVE AUTO]", title: `قناة: ${c.toUpperCase()} | البث المباشر التلقائي`, url: pb });
+      try {
+        const pRes = await axios.get(pb, { timeout: 3000 });
+        const lines = pRes.data.split("\n");
+        const base = pb.substring(0, pb.lastIndexOf("/") + 1);
+        
+        lines.forEach((l, i) => {
+          if (l.startsWith("#EXT-X-STREAM-INF:")) {
+            const resM = l.match(/RESOLUTION=(\d+x\d+)/);
+            const h = resM ? resM[1].split("x")[1] : "HD";
+            let u = lines[i+1]?.trim();
+            if (u && !u.startsWith("http")) u = base + u;
+            if (u) streams.push({ name: `🟢 [LIVE ${h}p]`, title: `بث مباشر - جودة ${h}p`, url: u });
+          }
+        });
+      } catch(err) {}
+    }
 
-    const streams = [{ name: "🟢 [KICK AUTO]", title: `قناة: ${c.toUpperCase()} | البث المباشر`, url: pb }];
-
-    try {
-      const pRes = await axios.get(pb, { timeout: 3000 });
-      const lines = pRes.data.split("\n");
-      const base = pb.substring(0, pb.lastIndexOf("/") + 1);
-      
-      lines.forEach((l, i) => {
-        if (l.startsWith("#EXT-X-STREAM-INF:")) {
-          const resM = l.match(/RESOLUTION=(\d+x\d+)/);
-          const h = resM ? resM[1].split("x")[1] : "HD";
-          let u = lines[i+1]?.trim();
-          if (u && !u.startsWith("http")) u = base + u;
-          if (u) streams.push({ name: `🟢 [${h}p]`, title: `جودة ${h}p | قناة: ${c.toUpperCase()}`, url: u });
-        }
-      });
-    } catch(err) {}
+    // 2. جلب الإعادات المسجلة (VODs) وإضافتها كروابط في نفس القائمة
+    const pastStreams = r.data?.previous_livestreams || [];
+    pastStreams.forEach((vod, index) => {
+      if (vod.video_url) {
+        streams.push({
+          name: `📼 [إعادة ${index + 1}]`,
+          title: vod.session_title || `إعادة بث مسجلة رقم ${index + 1}`,
+          url: vod.video_url
+        });
+      }
+    });
 
     res.json({ streams });
   } catch(e) {
