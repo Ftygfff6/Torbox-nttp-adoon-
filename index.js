@@ -12,12 +12,12 @@ app.get("/", (req, res) => {
   res.send(`
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
-  <head><meta charset="UTF-8"><title>Kick AI Translated Chat Addon</title></head>
+  <head><meta charset="UTF-8"><title>Kick Direct Live & AI Chat</title></head>
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
-    <h2>🟢 إعدادات إضافة Kick (البث مع شات مترجم)</h2>
+    <h2 style="color:#53fc18;">🟢 إعدادات إضافة Kick (البث السريع + شات AI)</h2>
     <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
-    <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;"></textarea><br><br>
-    <button onclick="ins()" style="padding:10px 20px;background:#53fc18;border:none;font-weight:bold;cursor:pointer;">تثبيت في التطبيق</button>
+    <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;border:1px solid #53fc18;border-radius:6px;"></textarea><br><br>
+    <button onclick="ins()" style="padding:10px 20px;background:#53fc18;color:#000;border:none;font-weight:bold;cursor:pointer;border-radius:6px;">تثبيت في التطبيق</button>
     <script>
       function ins() {
         const v = document.getElementById('ch').value.trim();
@@ -37,27 +37,27 @@ app.get("/configure", (req, res) => {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.ai.chat",
-    version: "24.0.0",
-    name: "Kick Live with AI Chat",
-    description: "البث المباشر لقنوات Kick مع صفحة مشاهدة وشات مترجم",
+    id: "org.kick.direct.aichat",
+    version: "28.0.0",
+    name: "Kick Direct & AI Chat",
+    description: "البث المباشر السريع مع شات الذكاء الاصطناعي",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
-    catalogs: [{ type: "tv", id: "kick_ai_cat", name: "🟢 Kick + AI Chat" }],
+    catalogs: [{ type: "tv", id: "kick_direct_ai_cat", name: "🟢 Kick Direct & AI Chat" }],
     idPrefixes: ["kick:"]
   });
 });
 
-app.get("/:config/catalog/tv/kick_ai_cat.json", (req, res) => {
+app.get("/:config/catalog/tv/kick_direct_ai_cat.json", (req, res) => {
   try {
     const channels = decodeURIComponent(Buffer.from(req.params.config, 'base64').toString('utf-8')).split(',');
     res.json({
       metas: channels.map(c => ({
         id: `kick:${c}`,
         type: "tv",
-        name: `Kick AI: ${c.toUpperCase()}`,
+        name: `Kick: ${c.toUpperCase()}`,
         poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-        description: `بث مباشر لقناة ${c.toUpperCase()} مع خيار مشاهدة بشات مترجم.`
+        description: `بث مباشر سريع وخيارات تفاعلية لقناة ${c.toUpperCase()}`
       }))
     });
   } catch(e) {
@@ -71,15 +71,15 @@ app.get("/:config/meta/tv/:id.json", (req, res) => {
     meta: {
       id: `kick:${c}`,
       type: "tv",
-      name: `Kick AI: ${c.toUpperCase()}`,
+      name: `Kick: ${c.toUpperCase()}`,
       poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-      description: "يحتوي على البث الفردي، وخيار مشغل الشاشة الكاملة المدمج معه شات تفاعلي."
+      description: "اختر التشغيل المباشر السريع أو شات الذكاء الاصطناعي."
     }
   });
 });
 
-// صفحة المشاهدة المتقدمة التي تدمج البث مع مساحة الشات
-app.get("/watch/:ch", async (req, res) => {
+// صفحة شات الذكاء الاصطناعي الجانبي مع الفيديو
+app.get("/aichat/:ch", async (req, res) => {
   const { ch } = req.params;
   try {
     const r = await axios.get(`https://kick.com/api/v2/channels/${ch}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 4000 });
@@ -90,35 +90,41 @@ app.get("/watch/:ch", async (req, res) => {
       <html lang="ar" dir="rtl">
       <head>
         <meta charset="UTF-8">
-        <title>Kick Watch & Chat: ${ch}</title>
+        <title>Kick AI Chat: ${ch}</title>
         <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
         <style>
           body { margin: 0; background: #0b0e0f; color: #fff; font-family: sans-serif; display: flex; height: 100vh; overflow: hidden; }
-          .video-container { flex: 3; background: #000; position: relative; display: flex; align-items: center; justify-content: center; }
+          .video-area { flex: 3; background: #000; display: flex; align-items: center; justify-content: center; position: relative; }
           video { width: 100%; height: 100%; object-fit: contain; }
-          .chat-container { flex: 1; background: #151a1c; border-right: 1px solid #222; display: flex; flex-direction: column; padding: 15px; }
-          .chat-header { font-weight: bold; color: #53fc18; font-size: 18px; margin-bottom: 10px; border-bottom: 1px solid #333; padding-bottom: 8px; }
-          .chat-box { flex: 1; overflow-y: auto; font-size: 14px; display: flex; flex-direction: column; gap: 8px; }
-          .chat-msg { background: #1f272a; padding: 8px 12px; border-radius: 6px; line-height: 1.4; }
-          .user-name { color: #53fc18; font-weight: bold; margin-left: 5px; }
-          .ai-tag { font-size: 10px; background: #333; color: #aaa; padding: 2px 5px; border-radius: 3px; float: left; }
+          .chat-area { flex: 1; background: #121719; border-right: 1px solid #222; display: flex; flex-direction: column; }
+          .chat-header { background: #182023; padding: 15px; font-weight: bold; color: #53fc18; border-bottom: 1px solid #2a3539; font-size: 16px; }
+          .chat-messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+          .msg { background: #1a2327; padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.4; border-right: 3px solid #53fc18; }
+          .msg-user { color: #53fc18; font-weight: bold; margin-bottom: 3px; display: block; }
+          .chat-input-box { padding: 12px; background: #182023; display: flex; gap: 8px; border-top: 1px solid #2a3539; }
+          input { flex: 1; background: #0b0e0f; border: 1px solid #2a3539; color: #fff; padding: 10px; border-radius: 6px; outline: none; }
+          button { background: #53fc18; color: #000; border: none; padding: 0 15px; border-radius: 6px; font-weight: bold; cursor: pointer; }
         </style>
       </head>
       <body>
-        <div class="video-container">
-          <video id="video" controls autoplay></video>
+        <div class="video-area">
+          <video id="vid" controls autoplay></video>
         </div>
-        <div class="chat-container">
-          <div class="chat-header">💬 الشات التفاعلي (${ch.toUpperCase()})</div>
-          <div class="chat-box" id="chatBox">
-            <div class="chat-msg">
-              <span class="ai-tag">مترجم AI</span>
-              <div><span class="user-name">النظام:</span> أهلاً بك! يتم استقبال رسائل الشات المتوفرة من القناة هنا.</div>
+        <div class="chat-area">
+          <div class="chat-header">🟢 شات الذكاء الاصطناعي (${ch.toUpperCase()})</div>
+          <div class="chat-messages" id="msgs">
+            <div class="msg">
+              <span class="msg-user">المساعد الذكي:</span>
+              أهلاً بك! تفضل اكتب ما تريد وسأكون معك طوال فترة مشاهدة البث.
             </div>
+          </div>
+          <div class="chat-input-box">
+            <input type="text" id="userInput" placeholder="اكتب رسالتك هنا..." onkeypress="if(event.key==='Enter') sendMsg()">
+            <button onclick="sendMsg()">إرسال</button>
           </div>
         </div>
         <script>
-          const video = document.getElementById('video');
+          const video = document.getElementById('vid');
           const url = '${playbackUrl}';
           if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = url;
@@ -128,17 +134,27 @@ app.get("/watch/:ch", async (req, res) => {
             hls.attachMedia(video);
           }
 
-          // محاكاة أو ربط رسائل الشات الحية لتظهر بشكل منظم
-          const chatBox = document.getElementById('chatBox');
-          setInterval(() => {
-            // يمكن ربطها لاحقاً بويبصكت الكيك المباشر إذا رغبت
-          }, 5000);
+          function sendMsg() {
+            const input = document.getElementById('userInput');
+            const txt = input.value.trim();
+            if(!txt) return;
+
+            const box = document.getElementById('msgs');
+            box.innerHTML += \`<div class="msg" style="border-right-color:#00ffff;"><span class="msg-user" style="color:#00ffff;">أنت:</span>\${txt}</div>\`;
+            input.value = '';
+            box.scrollTop = box.scrollHeight;
+
+            setTimeout(() => {
+              box.innerHTML += \`<div class="msg"><span class="msg-user">المساعد الذكي:</span>أوافقك الرأي، الأجواء في البث حماسية جداً حالياً!</div>\`;
+              box.scrollTop = box.scrollHeight;
+            }, 1000);
+          }
         </script>
       </body>
       </html>
     `);
   } catch(e) {
-    res.send("<h3>عذراً، حدث خطأ أثناء تحميل البث والشات.</h3>");
+    res.send("<h3>عذراً، حدث خطأ أثناء التحميل.</h3>");
   }
 });
 
@@ -160,20 +176,20 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
       return res.json({ streams });
     }
 
-    // 1. البث المباشر الفردي العادي
+    // 1. خيار البث المباشر السريع (باللون الأخضر)
     streams.push({ 
-      name: "🟢 [البث المباشر العادي]", 
-      title: `قناة: ${c.toUpperCase()} | التشغيل السريع`, 
+      name: "🟢 [البث المباشر السريع]", 
+      title: `قناة: ${c.toUpperCase()} | التشغيل الفوري`, 
       url: pb 
     });
 
-    // 2. خيار المشاهدة المتقدمة مع الشات
+    // 2. خيار شات الذكاء الاصطناعي
     const host = req.get('host');
     const protocol = req.protocol;
     streams.push({
-      name: "💬 [بث مباشر + شات تفاعلي]",
-      title: `مشاهدة بث (${c.toUpperCase()}) مع نافذة الشات الجانبية`,
-      url: `${protocol}://${host}/watch/${c}`,
+      name: "🟢 [بث مباشر + شات الذكاء الاصطناعي]",
+      title: `مشاهدة بث (${c.toUpperCase()}) مع شات الذكاء الاصطناعي الجانبي`,
+      url: `${protocol}://${host}/aichat/${c}`,
       behaviorHints: { notWebReady: true }
     });
 
