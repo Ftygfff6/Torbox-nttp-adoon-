@@ -12,9 +12,9 @@ app.get("/", (req, res) => {
   res.send(`
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
-  <head><meta charset="UTF-8"><title>Kick Custom Multi-View</title></head>
+  <head><meta charset="UTF-8"><title>Kick Live Multi-View Only</title></head>
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
-    <h2>🟢 إعدادات إضافة Kick (اختيار البث المزدوج)</h2>
+    <h2>🟢 إعدادات إضافة Kick (الدمج للبث المباشر فقط)</h2>
     <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
     <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;"></textarea><br><br>
     <button onclick="ins()" style="padding:10px 20px;background:#53fc18;border:none;font-weight:bold;cursor:pointer;">تثبيت في التطبيق</button>
@@ -37,18 +37,18 @@ app.get("/configure", (req, res) => {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.custom.multiview",
-    version: "22.0.0",
-    name: "Kick Custom Multi-View",
-    description: "اختر البثين بنفسك للتقسيم المزدوج للشاشة",
+    id: "org.kick.live.multiview.only",
+    version: "23.0.0",
+    name: "Kick Live Multi-View Only",
+    description: "دمج الشاشة المقسمة للقنوات التي تبث مباشر فقط",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
-    catalogs: [{ type: "tv", id: "kick_custom_cat", name: "🟢 Kick Multi-View Picker" }],
+    catalogs: [{ type: "tv", id: "kick_live_cat", name: "🟢 Kick Live & Multi-View" }],
     idPrefixes: ["kick:"]
   });
 });
 
-app.get("/:config/catalog/tv/kick_custom_cat.json", (req, res) => {
+app.get("/:config/catalog/tv/kick_live_cat.json", (req, res) => {
   try {
     const channels = decodeURIComponent(Buffer.from(req.params.config, 'base64').toString('utf-8')).split(',');
     res.json({
@@ -57,7 +57,7 @@ app.get("/:config/catalog/tv/kick_custom_cat.json", (req, res) => {
         type: "tv",
         name: `Kick: ${c.toUpperCase()}`,
         poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-        description: `اضغط لاختيار هذه القناة ودمجها مع أي بث آخر تفضله.`
+        description: `بث مباشر لقناة ${c.toUpperCase()} مع خيارات دمج نشطة.`
       }))
     });
   } catch(e) {
@@ -73,12 +73,12 @@ app.get("/:config/meta/tv/:id.json", (req, res) => {
       type: "tv",
       name: `Kick: ${c.toUpperCase()}`,
       poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-      description: "ستجد أدناه خيار البث الفردي، وخيارات مستقلة لدمج هذه القناة مع أي قناة أخرى أدخلتها في قائمتك حسب رغبتك."
+      description: "ستظهر لك خيارات الدمج فقط للقنوات التي تبث مباشر في هذه اللحظة."
     }
   });
 });
 
-// صفحة البث المزدوج (Multi-View Web Player)
+// مشغل الشاشة المقسمة (Multi-View)
 app.get("/multiview/:ch1/:ch2", async (req, res) => {
   const { ch1, ch2 } = req.params;
   try {
@@ -93,7 +93,7 @@ app.get("/multiview/:ch1/:ch2", async (req, res) => {
       <html lang="ar" dir="rtl">
       <head>
         <meta charset="UTF-8">
-        <title>Multi-View: ${ch1} & ${ch2}</title>
+        <title>Live Multi-View: ${ch1} & ${ch2}</title>
         <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
         <style>
           body { margin: 0; background: #000; color: #fff; font-family: sans-serif; display: flex; height: 100vh; overflow: hidden; }
@@ -142,31 +142,51 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
     const configStr = decodeURIComponent(Buffer.from(req.params.config, 'base64').toString('utf-8'));
     const channels = configStr.split(',').map(x => x.trim()).filter(Boolean);
     
+    // فحص القناة الأساسية هل هي تبث مباشر الآن؟
     const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
     const pb = r.data?.playback_url;
+    const isLive = r.data?.livestream !== null && r.data?.livestream !== undefined;
     
-    if (pb) {
-      // 1. البث الفردي الأساسي
-      streams.push({ 
-        name: "🟢 [بث فردي]", 
-        title: `قناة: ${c.toUpperCase()} | البث المباشر`, 
-        url: pb 
+    if (!pb || !isLive) {
+      streams.push({
+        name: "🔴 [البث متوقف]",
+        title: `قناة ${c.toUpperCase()} غير متصلة بالبث المباشر حالياً.`,
+        url: "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
       });
+      return res.json({ streams });
     }
 
-    // 2. خيارات تفاعلية تتيح لك اختيار القناة الثانية التي تريد دمجها معها صراحة
-    channels.forEach(otherChan => {
-      if (otherChan !== c) {
-        const host = req.get('host');
-        const protocol = req.protocol;
-        streams.push({
-          name: `🔲 [دمج مع: ${otherChan.toUpperCase()}]`,
-          title: `عرض شاشة مقسمة تجمع بين (${c.toUpperCase()}) و (${otherChan.toUpperCase()})`,
-          url: `${protocol}://${host}/multiview/${c}/${otherChan}`,
-          behaviorHints: { notWebReady: true }
-        });
-      }
+    // 1. خيار البث الفردي الأساسي (لأنه مباشر)
+    streams.push({ 
+      name: "🟢 [البث المباشر الفردي]", 
+      title: `قناة: ${c.toUpperCase()} | البث المباشر`, 
+      url: pb 
     });
+
+    // 2. التحقق من القنوات الأخرى: فحص كل قناة، وإذا كانت تبث مباشر فعلياً، نضيف خيار الدمج الخاص بها
+    for (const otherChan of channels) {
+      if (otherChan !== c) {
+        try {
+          const rOther = await axios.get(`https://kick.com/api/v2/channels/${otherChan}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 3000 });
+          const otherPb = rOther.data?.playback_url;
+          const otherIsLive = rOther.data?.livestream !== null && rOther.data?.livestream !== undefined;
+
+          // إضافة زر الدمج فقط إذا كانت القناة الثانية تبث مباشر أيضاً
+          if (otherPb && otherIsLive) {
+            const host = req.get('host');
+            const protocol = req.protocol;
+            streams.push({
+              name: `🔲 [دمج مباشر مع: ${otherChan.toUpperCase()}]`,
+              title: `عرض شاشة مقسمة تجمع بين بث (${c.toUpperCase()}) وبث (${otherChan.toUpperCase()}) المباشرين`,
+              url: `${protocol}://${host}/multiview/${c}/${otherChan}`,
+              behaviorHints: { notWebReady: true }
+            });
+          }
+        } catch (err) {
+          // تجاوز أي قناة تواجه خطأ في الاتصال دون تعطيل البقية
+        }
+      }
+    }
 
     res.json({ streams });
   } catch(e) {
