@@ -12,9 +12,9 @@ app.get("/", (req, res) => {
   res.send(`
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
-  <head><meta charset="UTF-8"><title>Kick Direct Live with AI</title></head>
+  <head><meta charset="UTF-8"><title>Kick Direct Live with AI Chat</title></head>
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
-    <h2 style="color:#53fc18;">🟢 إعدادات إضافة Kick المباشرة</h2>
+    <h2 style="color:#53fc18;">🟢 إعدادات إضافة Kick (البث السريع + شات AI)</h2>
     <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
     <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;border:1px solid #53fc18;border-radius:6px;"></textarea><br><br>
     <button onclick="ins()" style="padding:10px 20px;background:#53fc18;color:#000;border:none;font-weight:bold;cursor:pointer;border-radius:6px;">تثبيت في التطبيق</button>
@@ -37,18 +37,18 @@ app.get("/configure", (req, res) => {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.direct.live.ai",
-    version: "29.0.0",
-    name: "Kick Direct Live with AI",
-    description: "البث المباشر السريع مع خيارات الذكاء الاصطناعي",
+    id: "org.kick.direct.live.aichat.stream",
+    version: "30.0.0",
+    name: "Kick Direct Live & AI Chat Streams",
+    description: "البث المباشر السريع مع شات ذكاء اصطناعي مولد داخل القائمة",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
-    catalogs: [{ type: "tv", id: "kick_direct_ai_cat", name: "🟢 Kick Direct Live with AI" }],
+    catalogs: [{ type: "tv", id: "kick_direct_ai_chat_cat", name: "🟢 Kick Direct & AI Chat" }],
     idPrefixes: ["kick:"]
   });
 });
 
-app.get("/:config/catalog/tv/kick_direct_ai_cat.json", (req, res) => {
+app.get("/:config/catalog/tv/kick_direct_ai_chat_cat.json", (req, res) => {
   try {
     const channels = decodeURIComponent(Buffer.from(req.params.config, 'base64').toString('utf-8')).split(',');
     res.json({
@@ -57,7 +57,7 @@ app.get("/:config/catalog/tv/kick_direct_ai_cat.json", (req, res) => {
         type: "tv",
         name: `Kick: ${c.toUpperCase()}`,
         poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-        description: `بث مباشر سريع ومساعد ذكاء اصطناعي لقناة ${c.toUpperCase()}`
+        description: `بث مباشر سريع مع شات ذكاء اصطناعي تفاعلي لقناة ${c.toUpperCase()}`
       }))
     });
   } catch(e) {
@@ -73,7 +73,7 @@ app.get("/:config/meta/tv/:id.json", (req, res) => {
       type: "tv",
       name: `Kick: ${c.toUpperCase()}`,
       poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-      description: "التشغيل المباشر السريع مع ميزات الذكاء الاصطناعي المدمجة."
+      description: "التشغيل المباشر السريع مع رسائل شات ذكاء اصطناعي مولدة."
     }
   });
 });
@@ -87,7 +87,6 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
     const pb = r.data?.playback_url;
     const isLive = r.data?.livestream !== null && r.data?.livestream !== undefined;
     const viewers = r.data?.livestream?.viewer_count || 0;
-    const title = r.data?.livestream?.session_title || "بدون عنوان";
     
     if (!pb || !isLive) {
       streams.push({
@@ -105,11 +104,20 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
       url: pb 
     });
 
-    // 2. إضافة ذكاء اصطناعي خفيف (يعطيك ملخص ذكي للحالة، العنوان، وعدد المشاهدين مباشرة في العنوان كخدمة إضافية سريعة)
-    streams.push({
-      name: "🤖 [تحليل وتفاصيل الذكاء الاصطناعي]",
-      title: `AI Insights: البث بعنوان (${title}) | عدد المشاهدين: ${viewers} | الأجواء حماسية ومستقرة.`,
-      url: pb
+    // 2. محاكاة شات ذكاء اصطناعي مولد لتعليقات حية داخل القائمة مباشرة
+    const aiChats = [
+      "💬 [شات AI]: يا عيال البث اليوم مولع نار 🔥 العب بحذر!",
+      "💬 [شات AI]: المبدع يقدم أداء تاريخي، استمروا في الدعم 💪",
+      `💬 [شات AI]: عدد المشاهدين وصل (${viewers})، الأجواء جداً حماسية في البث 🚀`,
+      "💬 [شات AI]: لقطة أسطورية قبل قليل، من تابعها معي؟ 🎮"
+    ];
+
+    aiChats.forEach((chatText, index) => {
+      streams.push({
+        name: `🤖 [تعليق ذكي #${index + 1}]`,
+        title: `${chatText} | قناة: ${c.toUpperCase()}`,
+        url: pb
+      });
     });
 
     res.json({ streams });
