@@ -14,10 +14,10 @@ app.get(["/", "/configure"], (req, res) => {
   <html lang="ar" dir="rtl">
   <head><meta charset="UTF-8"><title>Kick VODs Addon</title></head>
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
-    <h2>🟢 Kick VODs & Replays Addon</h2>
-    <p>أدخل أسماء قنوات Kick (لعرض البثوث والإعادات):</p>
+    <h2>🟢 Kick Live & VODs Addon</h2>
+    <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
     <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;"></textarea><br><br>
-    <button onclick="ins()" style="padding:10px 20px;background:#53fc18;border:none;font-weight:bold;cursor:pointer;">تثبيت في Stremio / Harbor</button>
+    <button onclick="ins()" style="padding:10px 20px;background:#53fc18;border:none;font-weight:bold;cursor:pointer;">تثبيت في التطبيق</button>
     <script>
       function ins() {
         const v = document.getElementById('ch').value.trim();
@@ -33,56 +33,56 @@ app.get(["/", "/configure"], (req, res) => {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.vods.live",
-    version: "10.0.0",
-    name: "Kick VODs & Live",
-    description: "بث مباشر وإعادات البث السابقة لقنوات Kick",
+    id: "org.kick.vods.fixed",
+    version: "12.0.0",
+    name: "Kick Live & VODs",
+    description: "بث مباشر وإعادات قنوات Kick",
     resources: ["catalog", "meta", "stream"],
-    types: ["tv", "movie"],
+    types: ["tv"],
     catalogs: [
       { type: "tv", id: "kick_live_cat", name: "🟢 Kick - البث المباشر" },
-      { type: "tv", id: "kick_vods_cat", name: "📼 Kick - إعادات البث (VODs)" }
+      { type: "tv", id: "kick_vods_cat", name: "📼 Kick - الإعادات المسجلة" }
     ],
     idPrefixes: ["kick:"]
   });
 });
 
-app.get("/:config/catalog/:type/:id.json", async (req, res) => {
+app.get("/:config/catalog/tv/:id.json", async (req, res) => {
   const { config, id } = req.params;
   try {
     const channels = decodeURIComponent(Buffer.from(config, 'base64').toString('utf-8')).split(',');
-    
-    // إذا كان الطلب للإعادات (VODs)
-    if (id === "kick_vods_cat") {
-      const metas = [];
-      for (const c of channels) {
-        try {
-          const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 4000 });
-          const pastStreams = r.data?.previous_livestreams || [];
-          
-          pastStreams.forEach((vod, idx) => {
-            metas.push({
-              id: `kick_vod:${c}:${vod.id || idx}`,
-              type: "tv",
-              name: `${c.toUpperCase()}: ${vod.session_title || 'إعادة بث'}`,
-              poster: vod.thumbnail?.url || `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-              description: `تاريخ البث: ${vod.created_at || 'غير محدد'}`
-            });
-          });
-        } catch (err) {}
-      }
-      return res.json({ metas });
-    } 
-    
-    // القسم الافتراضي (البث المباشر)
-    const metas = channels.map(c => ({
-      id: `kick:${c}`,
-      type: "tv",
-      name: `Kick Live: ${c}`,
-      poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`
-    }));
-    res.json({ metas });
+    const metas = [];
 
+    for (const c of channels) {
+      try {
+        const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 4000 });
+        
+        if (id === "kick_vods_cat") {
+          const pastStreams = r.data?.previous_livestreams || [];
+          if (pastStreams.length > 0) {
+            pastStreams.forEach((vod, idx) => {
+              metas.push({
+                id: `kick_vod:${c}:${vod.id || idx}`,
+                type: "tv",
+                name: `${c.toUpperCase()} (إعادة)`,
+                poster: vod.thumbnail?.url || `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
+                description: vod.session_title || 'إعادة بث مسجلة'
+              });
+            });
+          }
+        } else {
+          metas.push({
+            id: `kick:${c}`,
+            type: "tv",
+            name: `Kick Live: ${c}`,
+            poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
+            description: `بث مباشر لقناة ${c}`
+          });
+        }
+      } catch (err) {}
+    }
+
+    res.json({ metas });
   } catch(e) { 
     res.json({ metas: [] }); 
   }
@@ -98,9 +98,9 @@ app.get("/:config/meta/tv/:id.json", async (req, res) => {
       meta: {
         id: id,
         type: "tv",
-        name: `إعادة بث: ${c.toUpperCase()}`,
+        name: `${c.toUpperCase()} - إعادة بث`,
         poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-        description: "إعادة البث المسجلة من منصة Kick"
+        description: "عرض إعادات البث المسجلة من Kick"
       }
     });
   }
@@ -110,7 +110,7 @@ app.get("/:config/meta/tv/:id.json", async (req, res) => {
     meta: { 
       id: `kick:${c}`, 
       type: "tv", 
-      name: `Kick: ${c}`, 
+      name: `Kick Live: ${c}`, 
       poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18` 
     } 
   });
@@ -119,7 +119,6 @@ app.get("/:config/meta/tv/:id.json", async (req, res) => {
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const id = req.params.id;
 
-  // التعامل مع روابط الإعادات (VODs)
   if (id.startsWith("kick_vod:")) {
     const parts = id.split(":");
     const c = parts[1];
@@ -134,7 +133,7 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
         return res.json({
           streams: [{
             name: "📼 [Kick VOD]",
-            title: `إعادة بث: ${targetVod.session_title || c}`,
+            title: `إعادة: ${targetVod.session_title || c}`,
             url: targetVod.video_url
           }]
         });
@@ -144,7 +143,6 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
     return res.json({ streams: [] });
   }
 
-  // البث المباشر العادي
   const c = id.replace("kick:", "").trim();
   try {
     const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
