@@ -8,13 +8,13 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 
-app.get(["/", "/configure"], (req, res) => {
+app.get("/", (req, res) => {
   res.send(`
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
-  <head><meta charset="UTF-8"><title>Kick Live & VODs</title></head>
+  <head><meta charset="UTF-8"><title>Kick Addon Config</title></head>
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
-    <h2>🟢 Kick Live & VODs Addon</h2>
+    <h2>🟢 إعدادات إضافة Kick (البث والإعادات)</h2>
     <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
     <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;"></textarea><br><br>
     <button onclick="ins()" style="padding:10px 20px;background:#53fc18;border:none;font-weight:bold;cursor:pointer;">تثبيت في التطبيق</button>
@@ -31,12 +31,16 @@ app.get(["/", "/configure"], (req, res) => {
   `);
 });
 
+app.get("/configure", (req, res) => {
+  res.redirect("/");
+});
+
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.live.vods.guaranteed",
-    version: "14.0.0",
-    name: "Kick Live & VODs",
-    description: "البث المباشر والإعادات المسجلة",
+    id: "org.kick.vods.working.fix",
+    version: "16.0.0",
+    name: "Kick Live & VODs Fix",
+    description: "البث المباشر والإعادات المسجلة لقنوات Kick",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
     catalogs: [{ type: "tv", id: "kick_cat", name: "🟢 Kick Channels" }],
@@ -53,7 +57,7 @@ app.get("/:config/catalog/tv/kick_cat.json", (req, res) => {
         type: "tv",
         name: `Kick: ${c.toUpperCase()}`,
         poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-        description: `قناة ${c} - البث المباشر والإعادات`
+        description: `قناة ${c} - البث المباشر والإعادات المسجلة`
       }))
     });
   } catch(e) {
@@ -69,7 +73,7 @@ app.get("/:config/meta/tv/:id.json", (req, res) => {
       type: "tv",
       name: `Kick: ${c.toUpperCase()}`,
       poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18`,
-      description: "اضغط لعرض البث المباشر وخيارات الإعادة المسجلة"
+      description: "اضغط لعرض خيارات التشغيل (البث المباشر والإعادات المسجلة)"
     }
   });
 });
@@ -79,46 +83,40 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const streams = [];
 
   try {
-    // 1. جلب البث المباشر الأساسي
     const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
-    const pb = r.data?.playback_url;
     
+    // 1. إضافة البث المباشر
+    const pb = r.data?.playback_url;
     if (pb) {
-      streams.push({ name: "🟢 [LIVE AUTO]", title: `قناة: ${c.toUpperCase()} | البث المباشر الأساسي`, url: pb });
-      try {
-        const pRes = await axios.get(pb, { timeout: 3000 });
-        const lines = pRes.data.split("\n");
-        const base = pb.substring(0, pb.lastIndexOf("/") + 1);
-        
-        lines.forEach((l, i) => {
-          if (l.startsWith("#EXT-X-STREAM-INF:")) {
-            const resM = l.match(/RESOLUTION=(\d+x\d+)/);
-            const h = resM ? resM[1].split("x")[1] : "HD";
-            let u = lines[i+1]?.trim();
-            if (u && !u.startsWith("http")) u = base + u;
-            if (u) streams.push({ name: `🟢 [LIVE ${h}p]`, title: `بث مباشر - جودة ${h}p`, url: u });
-          }
-        });
-      } catch(err) {}
+      streams.push({ 
+        name: "🟢 [LIVE AUTO]", 
+        title: `قناة: ${c.toUpperCase()} | البث المباشر`, 
+        url: pb 
+      });
     }
 
-    // 2. التحقق من وجود إعادات حقيقية، وإن لم توجد نضيف خيار إعادة توجيه يضمن ظهور خانة الإعادة
+    // 2. معالجة الإعادات المسجلة بطريقة صحيحة تضمن تشغيلها
     const pastStreams = r.data?.previous_livestreams || [];
     if (pastStreams.length > 0) {
       pastStreams.forEach((vod, index) => {
-        if (vod.video_url) {
+        // التحقق من وجود رابط صالح للفيديو المسجل
+        let vodUrl = vod.video_url || vod.source || vod.playback_url;
+        if (vodUrl) {
           streams.push({
             name: `📼 [إعادة ${index + 1}]`,
-            title: vod.session_title || `إعادة مسجلة رقم ${index + 1}`,
-            url: vod.video_url
+            title: vod.session_title ? `إعادة: ${vod.session_title}` : `إعادة مسجلة رقم ${index + 1}`,
+            url: vodUrl,
+            behaviorHints: { notWebReady: true } // تضمن توافق المشغل مع الملفات المسجلة الثقيلة
           });
         }
       });
-    } else {
-      // خيار إضافي يظهر للمستخدم ليؤكد أن النظام جاهز للإعادات فور توفرها من القناة
+    }
+
+    // إذا لم تُرجع المنصة أي إعادات، نضع خياراً احتياطياً يوضح الحالة للمشغل
+    if (streams.length === (pb ? 1 : 0)) {
       streams.push({
         name: "📼 [إعادة البث]",
-        title: `قناة: ${c.toUpperCase()} | (لا توجد إعادات مسجلة حالياً من المنصة)`,
+        title: `قناة: ${c.toUpperCase()} | (لا توجد إعادات مسجلة متاح عرضها حالياً)`,
         url: pb || "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
       });
     }
