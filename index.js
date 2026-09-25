@@ -8,14 +8,19 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 
+// دالة مساعدة لتشفير/فك تشفير الإعدادات
+const encodeConfig = (channels) => Buffer.from(encodeURIComponent(channels)).toString("base64");
+const decodeConfig = (config) => decodeURIComponent(Buffer.from(config, "base64").toString("utf-8"));
+
+// صفحة الإعداد
 app.get("/", (req, res) => {
   res.send(`
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
-  <head><meta charset="UTF-8"><title>Kick Direct Live with AI Chat</title></head>
+  <head><meta charset="UTF-8"><title>Kick Addon Setup</title></head>
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
-    <h2 style="color:#53fc18;">🟢 إعدادات إضافة Kick (البث السريع + شات AI)</h2>
-    <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
+    <h2 style="color:#53fc18;">🟢 إعدادات إضافة Kick (بث مباشر + إعادات)</h2>
+    <p>أدخل أسماء القنوات (مفصولة بفواصل):</p>
     <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;border:1px solid #53fc18;border-radius:6px;"></textarea><br><br>
     <button onclick="ins()" style="padding:10px 20px;background:#53fc18;color:#000;border:none;font-weight:bold;cursor:pointer;border-radius:6px;">تثبيت في التطبيق</button>
     <script>
@@ -31,40 +36,39 @@ app.get("/", (req, res) => {
   `);
 });
 
-app.get("/configure", (req, res) => {
-  res.redirect("/");
-});
+app.get("/configure", (req, res) => res.redirect("/"));
 
+// المانيفست
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.direct.live.aichat.stream",
-    version: "30.0.0",
-    name: "Kick Direct Live & AI Chat Streams",
-    description: "البث المباشر السريع مع شات ذكاء اصطناعي مولد داخل القائمة",
+    id: "org.kick.direct.live.vod",
+    version: "31.0.0",
+    name: "Kick Live & Replays",
+    description: "بث مباشر وإعادات قنوات Kick داخل Stremio",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
-    catalogs: [{ type: "tv", id: "kick_direct_ai_chat_cat", name: "🟢 Kick Direct & AI Chat" }],
+    catalogs: [{ type: "tv", id: "kick_cat", name: "🟢 Kick Channels" }],
     idPrefixes: ["kick:"]
   });
 });
 
-app.get("/:config/catalog/tv/kick_direct_ai_chat_cat.json", (req, res) => {
+// الكاتالوج
+app.get("/:config/catalog/tv/kick_cat.json", (req, res) => {
   try {
-    const channels = decodeURIComponent(Buffer.from(req.params.config, 'base64').toString('utf-8')).split(',');
+    const channels = decodeConfig(req.params.config).split(",");
     res.json({
       metas: channels.map(c => ({
         id: `kick:${c}`,
         type: "tv",
         name: `Kick: ${c.toUpperCase()}`,
         poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-        description: `بث مباشر سريع مع شات ذكاء اصطناعي تفاعلي لقناة ${c.toUpperCase()}`
+        description: `قناة ${c.toUpperCase()} على Kick`
       }))
     });
-  } catch(e) {
-    res.json({ metas: [] });
-  }
+  } catch(e) { res.json({ metas: [] }); }
 });
 
+// الميتا
 app.get("/:config/meta/tv/:id.json", (req, res) => {
   const c = req.params.id.replace("kick:", "");
   res.json({
@@ -72,58 +76,67 @@ app.get("/:config/meta/tv/:id.json", (req, res) => {
       id: `kick:${c}`,
       type: "tv",
       name: `Kick: ${c.toUpperCase()}`,
-      poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-      description: "التشغيل المباشر السريع مع رسائل شات ذكاء اصطناعي مولدة."
+      poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`
     }
   });
 });
 
+// الستريم (المباشر + الإعادات)
 app.get("/:config/stream/tv/:id.json", async (req, res) => {
   const c = req.params.id.replace("kick:", "").trim();
   const streams = [];
 
   try {
-    const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
-    const pb = r.data?.playback_url;
-    const isLive = r.data?.livestream !== null && r.data?.livestream !== undefined;
-    const viewers = r.data?.livestream?.viewer_count || 0;
-    
-    if (!pb || !isLive) {
+    // 1. جلب حالة البث المباشر
+    const liveRes = await axios.get(`https://kick.com/api/v2/channels/${c}`, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      timeout: 8000
+    });
+    const isLive = liveRes.data?.livestream !== null;
+    const pb = liveRes.data?.playback_url;
+
+    if (isLive && pb) {
       streams.push({
-        name: "🔴 [البث متوقف]",
-        title: `قناة ${c.toUpperCase()} غير متصلة بالبث المباشر حالياً.`,
-        url: "https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4"
+        name: "🟢 البث المباشر",
+        title: `مباشر الآن | ${c.toUpperCase()}`,
+        url: pb
       });
-      return res.json({ streams });
     }
 
-    // 1. التشغيل المباشر السريع الأساسي
-    streams.push({ 
-      name: "🟢 [البث المباشر السريع]", 
-      title: `قناة: ${c.toUpperCase()} | التشغيل الفوري`, 
-      url: pb 
+    // 2. جلب الإعادات (VODs) - آخر 10 فيديوهات
+    const vodRes = await axios.get(`https://kick.com/api/v2/channels/${c}/videos`, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      timeout: 8000
     });
+    
+    // الـ API يرجع مصفوفة مباشرة
+    const vods = Array.isArray(vodRes.data) ? vodRes.data : (vodRes.data?.data || []);
 
-    // 2. محاكاة شات ذكاء اصطناعي مولد لتعليقات حية داخل القائمة مباشرة
-    const aiChats = [
-      "💬 [شات AI]: يا عيال البث اليوم مولع نار 🔥 العب بحذر!",
-      "💬 [شات AI]: المبدع يقدم أداء تاريخي، استمروا في الدعم 💪",
-      `💬 [شات AI]: عدد المشاهدين وصل (${viewers})، الأجواء جداً حماسية في البث 🚀`,
-      "💬 [شات AI]: لقطة أسطورية قبل قليل، من تابعها معي؟ 🎮"
-    ];
+    vods.slice(0, 10).forEach(v => {
+      const vid = v.video || {};
+      const uuid = vid.uuid;
+      if (!uuid) return;
 
-    aiChats.forEach((chatText, index) => {
+      // بناء رابط الإعادة يدوياً
+      const watchUrl = `https://kick.com/${c}/videos/${uuid}`;
+      const title = v.session_title || "بث سابق";
+      const durationMin = v.duration ? Math.round(v.duration / 60000) : 0;
+      const views = v.views || 0;
+
       streams.push({
-        name: `🤖 [تعليق ذكي #${index + 1}]`,
-        title: `${chatText} | قناة: ${c.toUpperCase()}`,
-        url: pb
+        name: `📼 ${title.substring(0, 45)}...`,
+        title: `⏱ ${durationMin} د | 👁 ${views} | ${new Date(v.created_at).toLocaleDateString('ar')}`,
+        url: watchUrl
       });
     });
 
     res.json({ streams });
   } catch(e) {
+    console.error(e.message);
     res.json({ streams: [] });
   }
 });
 
-app.listen(PORT);
+app.listen(PORT, () => {
+  console.log(`Addon running on port ${PORT}`);
+});
