@@ -1,7 +1,7 @@
 {
-  "name": "torbox-usenet-addon",
-  "version": "2.0.0",
-  "description": "Stremio Addon for TorBox Usenet",
+  "name": "kick-live-addon",
+  "version": "33.0.0",
+  "description": "Kick Live & Replays for Stremio",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -9,6 +9,7 @@
   "dependencies": {
     "express": "^4.18.2",
     "axios": "^1.6.0",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "m3u8-parser": "^7.1.0"
   }
 }
