@@ -1,4 +1,3 @@
-
 const express = require("express");
 const cors = require("cors");
 const fetch = require("node-fetch");
@@ -34,25 +33,16 @@ app.get("/", (req, res) => {
   <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
     <h2 style="color:#53fc18;">🟢 إعدادات إضافة Kick</h2>
     <p>أدخل أسماء القنوات (مفصولة بفواصل):</p>
-    <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;border:1px solid #53fc18;border-radius:6px;" placeholder="xqc, trainwreckstv"></textarea><br><br>
+    <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;border:1px solid #53fc18;border-radius:6px;" placeholder="abu_abeer16, xqc"></textarea><br><br>
     
-    <label>الجودة المفضلة:</label><br>
-    <select id="qual" style="padding:8px;background:#151a1c;color:#53fc18;border:1px solid #53fc18;margin-top:5px;border-radius:6px;">
-      <option value="all">عرض جميع الجودات</option>
-      <option value="1080">1080p</option>
-      <option value="720">720p</option>
-      <option value="480">480p</option>
-    </select><br><br>
-
     <button onclick="ins()" style="padding:10px 20px;background:#53fc18;color:#000;border:none;font-weight:bold;cursor:pointer;border-radius:6px;">تثبيت في التطبيق</button>
     
     <script>
       function ins() {
         const v = document.getElementById('ch').value.trim();
-        const q = document.getElementById('qual').value;
         if(!v) return alert('أدخل قناة!');
         const list = v.split(/[,\\s\\n]+/).map(c => c.trim().toLowerCase()).filter(Boolean).join(',');
-        const payload = btoa(encodeURIComponent(JSON.stringify({ channels: list, quality: q })));
+        const payload = btoa(encodeURIComponent(JSON.stringify({ channels: list, quality: "all" })));
         window.location.href = 'stremio://' + window.location.host + '/' + payload + '/manifest.json';
       }
     </script>
@@ -79,10 +69,10 @@ function decodeConfig(config) {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.live.vod.v25",
-    version: "45.0.0",
+    id: "org.kick.live.vod.v26",
+    version: "46.0.0",
     name: "Kick Live 🟢",
-    description: "بث مباشر Kick مع تحديد الجودة",
+    description: "بث مباشر Kick مع كل الجودات مرتبة",
     logo: "https://kick.com/favicon.ico",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
@@ -124,42 +114,64 @@ app.get("/:config/meta/tv/kick:channel.json", (req, res) => {
 
 app.get("/:config/stream/tv/kick:channel.json", async (req, res) => {
   const c = req.params.channel.trim().toLowerCase();
-  const config = decodeConfig(req.params.config);
-  const selectedQuality = config.quality || "all";
   const streams = [];
 
-  const data = await fetchKickChannel(c);
-  let masterUrl = data?.playback_url || `https://stream.kick.com/ivs/v1/160088099270/channel/${c}/m3u8/master.m3u8`;
-
   try {
-    const response = await fetch(masterUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Referer": "https://kick.com/",
-        "Origin": "https://kick.com"
-      }
-    });
+    const headers = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*",
+      "Referer": "https://kick.com/",
+      "Origin": "https://kick.com"
+    };
 
-    if (response.ok) {
-      const masterBody = await response.text();
-      const parser = new Parser();
-      parser.push(masterBody);
-      parser.end();
+    const data = await fetchKickChannel(c);
+    const pb = data?.playback_url;
 
-      let variants = parser.manifest.playlists || [];
-      variants.sort((a, b) => (b.attributes?.BANDWIDTH || 0) - (a.attributes?.BANDWIDTH || 0));
+    if (pb) {
+      const m3u8Res = await fetch(pb, { headers });
+      if (m3u8Res.ok) {
+        const masterBody = await m3u8Res.text();
+        const parser = new Parser();
+        parser.push(masterBody);
+        parser.end();
 
-      variants.forEach((v) => {
-        const attrs = v.attributes || {};
-        const height = attrs.RESOLUTION ? `${attrs.RESOLUTION.height}` : "";
-        const resolutionLabel = attrs.RESOLUTION ? `${attrs.RESOLUTION.height}p` : "تلقائي";
-        const bandwidth = attrs.BANDWIDTH ? `${Math.round(attrs.BANDWIDTH / 1000)} kbps` : "";
-        const streamUrl = v.uri ? new URL(v.uri, masterUrl).href : masterUrl;
+        let variants = parser.manifest.playlists || [];
+        
+        // ترتيب الجودات تنازلياً (من الأعلى إلى الأقل دقة حسب الـ Bandwidth و Resolution)
+        variants.sort((a, b) => {
+          const resA = a.attributes?.RESOLUTION?.height || 0;
+          const resB = b.attributes?.RESOLUTION?.height || 0;
+          if (resB !== resA) return resB - resA;
+          return (b.attributes?.BANDWIDTH || 0) - (a.attributes?.BANDWIDTH || 0);
+        });
 
-        if (selectedQuality === "all" || height.includes(selectedQuality)) {
+        // 1. إضافة خيار التلقائي (Auto) في المقدمة
+        streams.push({
+          name: `🟢 Kick | تلقائي (Auto)`,
+          title: `قناة ${c.toUpperCase()}`,
+          url: pb,
+          behaviorHints: {
+            notWebReady: true,
+            proxyHeaders: {
+              request: {
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://kick.com/",
+                "Origin": "https://kick.com"
+              }
+            }
+          }
+        });
+
+        // 2. إضافة جميع الجودات المتاحة مرتبة من الأفضل إلى الأسوأ
+        variants.forEach((v) => {
+          const attrs = v.attributes || {};
+          const height = attrs.RESOLUTION ? `${attrs.RESOLUTION.height}p` : "مخصص";
+          const bandwidth = attrs.BANDWIDTH ? `${Math.round(attrs.BANDWIDTH / 1000)} kbps` : "";
+          const streamUrl = v.uri ? new URL(v.uri, pb).href : pb;
+
           streams.push({
-            name: `🟢 Kick | ${resolutionLabel}`,
-            title: bandwidth ? `📊 ${bandwidth}` : "بث مباشر",
+            name: `🟢 Kick | ${height}`,
+            title: bandwidth ? `📊 ${bandwidth} | بث مباشر` : `بث مباشر`,
             url: streamUrl,
             behaviorHints: {
               notWebReady: true,
@@ -172,27 +184,11 @@ app.get("/:config/stream/tv/kick:channel.json", async (req, res) => {
               }
             }
           });
-        }
-      });
-    }
-  } catch (e) {}
-
-  if (streams.length === 0) {
-    streams.push({
-      name: "🟢 Kick | بث مباشر",
-      title: `قناة ${c.toUpperCase()}`,
-      url: masterUrl,
-      behaviorHints: {
-        notWebReady: true,
-        proxyHeaders: {
-          request: {
-            "User-Agent": "Mozilla/5.0",
-            "Referer": "https://kick.com/",
-            "Origin": "https://kick.com"
-          }
-        }
+        });
       }
-    });
+    }
+  } catch (e) {
+    console.error("Stream fetch error:", e.message);
   }
 
   res.json({ streams });
