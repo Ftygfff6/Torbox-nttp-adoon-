@@ -53,10 +53,10 @@ function decodeConfig(config) {
 
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.live.vod.v27",
-    version: "47.0.0",
+    id: "org.kick.live.vod.v30",
+    version: "50.0.0",
     name: "Kick Live 🟢",
-    description: "بث مباشر Kick مع كل الجودات",
+    description: "Kick Live Streams with Quality Options",
     logo: "https://kick.com/favicon.ico",
     resources: ["catalog", "meta", "stream"],
     types: ["tv"],
@@ -75,7 +75,7 @@ app.get("/:config/catalog/tv/kick_live_cat.json", (req, res) => {
         type: "tv",
         name: `🔴 مباشر: ${c.toUpperCase()}`,
         poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512&bold=true`,
-        description: `البث المباشر لقناة ${c.toUpperCase()}`
+        description: `Kick stream for ${c.toUpperCase()}`
       }))
     });
   } catch (e) {
@@ -91,7 +91,7 @@ app.get("/:config/meta/tv/kick:channel.json", (req, res) => {
       type: "tv",
       name: `🔴 ${c.toUpperCase()}`,
       poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512&bold=true`,
-      description: `البث المباشر لقناة ${c.toUpperCase()}`
+      description: `Kick stream for ${c.toUpperCase()}`
     }
   });
 });
@@ -126,8 +126,8 @@ app.get("/:config/stream/tv/kick:channel.json", async (req, res) => {
       });
 
       streams.push({
-        name: `🟢 Kick | تلقائي (Auto)`,
-        title: `بث مباشر: ${c.toUpperCase()}`,
+        name: "🟢 Kick | Auto",
+        title: `Live: ${c.toUpperCase()}`,
         url: masterUrl,
         behaviorHints: {
           notWebReady: true,
@@ -143,5 +143,50 @@ app.get("/:config/stream/tv/kick:channel.json", async (req, res) => {
 
       variants.forEach((v) => {
         const attrs = v.attributes || {};
-        const height = attrs.RESOLUTION ? `${attrs.RESOLUTION.height}p` : "مخصص";
-        
+        const height = attrs.RESOLUTION ? `${attrs.RESOLUTION.height}p` : "Quality";
+        const bandwidth = attrs.BANDWIDTH ? `${Math.round(attrs.BANDWIDTH / 1000)} kbps` : "";
+        const streamUrl = v.uri ? new URL(v.uri, masterUrl).href : masterUrl;
+
+        streams.push({
+          name: `🟢 Kick | ${height}`,
+          title: bandwidth ? `📊 ${bandwidth} | Live` : "Live",
+          url: streamUrl,
+          behaviorHints: {
+            notWebReady: true,
+            proxyHeaders: {
+              request: {
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://kick.com/",
+                "Origin": "https://kick.com"
+              }
+            }
+          }
+        });
+      });
+    }
+  } catch (e) {}
+
+  if (streams.length === 0) {
+    streams.push({
+      name: "🟢 Kick | Backup Link",
+      title: `Channel: ${c.toUpperCase()}`,
+      url: masterUrl,
+      behaviorHints: {
+        notWebReady: true,
+        proxyHeaders: {
+          request: {
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "https://kick.com/",
+            "Origin": "https://kick.com"
+          }
+        }
+      }
+    });
+  }
+
+  res.json({ streams });
+});
+
+app.listen(PORT, () => {
+  console.log(`🟢 Kick Addon running on port ${PORT}`);
+});
