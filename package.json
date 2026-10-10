@@ -1,7 +1,7 @@
 {
   "name": "kick-live-addon",
-  "version": "42.1.0",
-  "description": "Kick Live & Replays Addon for Stremio",
+  "version": "44.0.0",
+  "description": "Kick Live Addon for Stremio",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
