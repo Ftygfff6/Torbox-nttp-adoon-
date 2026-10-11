@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const fetch = require("node-fetch");
+const axios = require("axios");
 
 const app = express();
 app.use(cors());
@@ -8,91 +8,23 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 
-// ==================== دالة جلب مع timeout ====================
-function fetchWithTimeout(url, options = {}, timeout = 8000) {
-  return Promise.race([
-    fetch(url, options),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout")), timeout)
-    )
-  ]);
-}
-
-// ==================== دالة جلب بيانات Kick (مباشر ثم وسيط) ====================
-async function fetchKickChannel(slug) {
-  const kickUrl = `https://kick.com/api/v2/channels/${slug}`;
-
-  const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://kick.com/",
-    "Origin": "https://kick.com"
-  };
-
-  // المحاولة 1: مباشر
-  try {
-    const res = await fetchWithTimeout(kickUrl, { headers }, 6000);
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (e) {
-    console.log("Direct fetch failed:", e.message);
-  }
-
-  // المحاولة 2: allorigins
-  try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(kickUrl)}`;
-    const res = await fetchWithTimeout(proxyUrl, {}, 8000);
-    if (res.ok) {
-      const wrapper = await res.json();
-      if (wrapper.contents) {
-        return JSON.parse(wrapper.contents);
-      }
-    }
-  } catch (e) {
-    console.log("Proxy fetch failed:", e.message);
-  }
-
-  // المحاولة 3: r.jina.ai
-  try {
-    const jinaUrl = `https://r.jina.ai/${kickUrl}`;
-    const res = await fetchWithTimeout(jinaUrl, {
-      headers: { "Accept": "application/json" }
-    }, 8000);
-    if (res.ok) {
-      const text = await res.text();
-      const jsonStart = text.indexOf("{");
-      if (jsonStart !== -1) {
-        return JSON.parse(text.substring(jsonStart));
-      }
-    }
-  } catch (e) {
-    console.log("Jina fetch failed:", e.message);
-  }
-
-  return null;
-}
-
-// ==================== الصفحة الرئيسية ====================
+// صفحة الإعدادات المحسنة
 app.get("/", (req, res) => {
   res.send(`
   <!DOCTYPE html>
   <html lang="ar" dir="rtl">
-  <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kick Stremio</title></head>
-  <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding:40px 20px;">
-    <h2 style="color:#53fc18;">🟢 إضافة Kick</h2>
-    <p>أدخل أسماء القنوات (مفصولة بفواصل أو مسافات):</p>
-    <textarea id="ch" style="width:100%;max-width:400px;height:100px;background:#151a1c;color:#53fc18;padding:12px;border:1px solid #53fc18;border-radius:8px;font-size:16px;" placeholder="xqc, kaicenat, adinross"></textarea><br><br>
-    <button onclick="ins()" style="padding:14px 28px;background:#53fc18;color:#000;border:none;font-weight:bold;cursor:pointer;border-radius:8px;font-size:16px;">📲 تثبيت في Stremio</button>
+  <head><meta charset="UTF-8"><title>Kick Pro Live Addon</title></head>
+  <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
+    <h2>🟢 إعدادات إضافة Kick للبث المباشر</h2>
+    <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
+    <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;"></textarea><br><br>
+    <button onclick="ins()" style="padding:10px 20px;background:#53fc18;border:none;font-weight:bold;cursor:pointer;">تثبيت في التطبيق</button>
     <script>
       function ins() {
         const v = document.getElementById('ch').value.trim();
-        if(!v) return alert('أدخل اسم قناة على الأقل!');
+        if(!v) return alert('أدخل قناة!');
         const list = v.split(/[,\\s\\n]+/).map(c => c.trim().toLowerCase()).filter(Boolean).join(',');
-        if(!list) return alert('أدخل اسم صحيح!');
-        const payload = btoa(encodeURIComponent(JSON.stringify({ channels: list, quality: "all" })));
-        window.location.href = 'stremio://' + window.location.host + '/' + payload + '/manifest.json';
+        window.location.href = 'stremio://' + window.location.host + '/' + btoa(encodeURIComponent(list)) + '/manifest.json';
       }
     </script>
   </body>
@@ -100,138 +32,97 @@ app.get("/", (req, res) => {
   `);
 });
 
-app.get("/configure", (req, res) => res.redirect("/"));
+app.get("/configure", (req, res) => {
+  res.redirect("/");
+});
 
-// ==================== فك تشفير الإعدادات ====================
-function decodeConfig(config) {
-  try {
-    const decoded = decodeURIComponent(Buffer.from(config, "base64").toString("utf-8"));
-    return JSON.parse(decoded);
-  } catch (e) {
-    try {
-      const oldStr = decodeURIComponent(Buffer.from(config, "base64").toString("utf-8"));
-      return { channels: oldStr, quality: "all" };
-    } catch (err) {
-      return { channels: "", quality: "all" };
-    }
-  }
-}
-
-// ==================== Manifest ====================
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
-    id: "org.kick.live.vod.v31",
-    version: "52.0.0",
-    name: "Kick Live 🟢",
-    description: "Kick Live Streams",
-    logo: "https://kick.com/favicon.ico",
-    resources: [
-      "catalog",
-      "meta",
-      {
-        name: "stream",
-        types: ["tv"],
-        idPrefixes: ["kick:"]
-      }
-    ],
+    id: "org.kick.pro.live",
+    version: "19.0.0",
+    name: "Kick Pro Live",
+    description: "البث المباشر لقنوات Kick بأعلى جودة واستقرار",
+    resources: ["catalog", "meta", "stream"],
     types: ["tv"],
-    catalogs: [
-      { type: "tv", id: "kick_live_cat", name: "🟢 Kick مباشر" }
-    ],
+    catalogs: [{ type: "tv", id: "kick_live_cat", name: "🟢 Kick Live Channels" }],
     idPrefixes: ["kick:"]
   });
 });
 
-// ==================== Catalog ====================
 app.get("/:config/catalog/tv/kick_live_cat.json", (req, res) => {
   try {
-    const config = decodeConfig(req.params.config);
-    const channels = config.channels ? config.channels.split(",").filter(Boolean) : [];
+    const channels = decodeURIComponent(Buffer.from(req.params.config, 'base64').toString('utf-8')).split(',');
     res.json({
       metas: channels.map(c => ({
         id: `kick:${c}`,
         type: "tv",
-        name: `🔴 ${c.toUpperCase()}`,
-        poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512&bold=true`,
-        description: `Kick: ${c.toUpperCase()}`
+        name: `Kick: ${c.toUpperCase()}`,
+        poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
+        description: `بث مباشر حصري لقناة ${c.toUpperCase()} بجودات متعددة واستقرار تام.`
       }))
     });
-  } catch (e) {
+  } catch(e) {
     res.json({ metas: [] });
   }
 });
 
-// ==================== Meta ====================
-app.get("/:config/meta/tv/kick:channel.json", (req, res) => {
-  const c = req.params.channel;
+app.get("/:config/meta/tv/:id.json", (req, res) => {
+  const c = req.params.id.replace("kick:", "");
   res.json({
     meta: {
       id: `kick:${c}`,
       type: "tv",
-      name: `🔴 ${c.toUpperCase()}`,
-      poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512&bold=true`,
-      description: `Kick: ${c.toUpperCase()}`
+      name: `Kick: ${c.toUpperCase()}`,
+      poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
+      description: "اختر الجودة المناسبة لمشاهدة البث المباشر بدون تقطيع."
     }
   });
 });
 
-// ==================== Streams (النسخة السريعة) ====================
-app.get("/:config/stream/tv/kick:channel.json", async (req, res) => {
-  const c = req.params.channel.trim().toLowerCase();
+app.get("/:config/stream/tv/:id.json", async (req, res) => {
+  const c = req.params.id.replace("kick:", "").trim();
   const streams = [];
 
-  const streamHeaders = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Referer": "https://kick.com/",
-    "Origin": "https://kick.com"
-  };
-
   try {
-    const data = await fetchKickChannel(c);
-    const pb = data?.playback_url;
+    const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
+    const pb = r.data?.playback_url;
+    
+    if (!pb) return res.json({ streams: [] });
 
-    if (pb) {
-      // رابط Auto (الأساسي)
-      streams.push({
-        name: `🟢 Kick | Auto`,
-        title: `📺 ${c.toUpperCase()}`,
-        url: pb,
-        behaviorHints: {
-          notWebReady: true,
-          proxyHeaders: { request: streamHeaders }
+    // 1. الخيار التلقائي السريع
+    streams.push({ 
+      name: "🟢 [KICK AUTO]", 
+      title: `قناة: ${c.toUpperCase()} | البث المباشر (تلقائي)`, 
+      url: pb 
+    });
+
+    // 2. استخراج الجودات المتاحة بدقة وترتيبها
+    try {
+      const pRes = await axios.get(pb, { timeout: 3000 });
+      const lines = pRes.data.split("\n");
+      const base = pb.substring(0, pb.lastIndexOf("/") + 1);
+      
+      lines.forEach((l, i) => {
+        if (l.startsWith("#EXT-X-STREAM-INF:")) {
+          const resM = l.match(/RESOLUTION=(\d+x\d+)/);
+          const h = resM ? resM[1].split("x")[1] : "HD";
+          let u = lines[i+1]?.trim();
+          if (u && !u.startsWith("http")) u = base + u;
+          if (u) {
+            streams.push({ 
+              name: `🟢 [${h}p]`, 
+              title: `بث مباشر - جودة ${h}p | قناة: ${c.toUpperCase()}`, 
+              url: u 
+            });
+          }
         }
       });
+    } catch(err) {}
 
-      // إضافة جودات شائعة كخيارات منفصلة
-      // ملاحظة: كلها نفس الرابط، لكن بمسميات مختلفة
-      // (Stremio يتعامل مع m3u8 تلقائياً ويختار الجودة)
-      const qualities = ["1080p", "720p", "480p", "360p", "160p"];
-      qualities.forEach(q => {
-        streams.push({
-          name: `🟢 Kick | ${q}`,
-          title: `📊 ${q} | ${c.toUpperCase()}`,
-          url: pb,
-          behaviorHints: {
-            notWebReady: true,
-            proxyHeaders: { request: streamHeaders }
-          }
-        });
-      });
-    }
-  } catch (e) {
-    console.error("Stream error:", e.message);
+    res.json({ streams });
+  } catch(e) {
+    res.json({ streams: [] });
   }
-
-  res.json({ streams });
 });
 
-// ==================== Keep-Alive ====================
-setInterval(() => {
-  fetch(`http://localhost:${PORT}/`, { timeout: 5000 }).catch(() => {});
-  console.log("🔄 Keep-alive ping");
-}, 10 * 60 * 1000); // كل 10 دقائق
-
-// ==================== تشغيل الخادم ====================
-app.listen(PORT, () => {
-  console.log(`🟢 Kick Addon running on port ${PORT}`);
-});
+app.listen(PORT);
