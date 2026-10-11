@@ -9,6 +9,7 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 
+// ==================== الصفحة الرئيسية ====================
 app.get("/", (req, res) => {
   res.send(`
   <!DOCTYPE html>
@@ -18,9 +19,7 @@ app.get("/", (req, res) => {
     <h2 style="color:#53fc18;">🟢 إعدادات إضافة Kick</h2>
     <p>أدخل أسماء القنوات (مفصولة بفواصل):</p>
     <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;border:1px solid #53fc18;border-radius:6px;" placeholder="abu_abeer16, xqc"></textarea><br><br>
-    
     <button onclick="ins()" style="padding:10px 20px;background:#53fc18;color:#000;border:none;font-weight:bold;cursor:pointer;border-radius:6px;">تثبيت في التطبيق</button>
-    
     <script>
       function ins() {
         const v = document.getElementById('ch').value.trim();
@@ -37,6 +36,7 @@ app.get("/", (req, res) => {
 
 app.get("/configure", (req, res) => res.redirect("/"));
 
+// ==================== فك تشفير الإعدادات ====================
 function decodeConfig(config) {
   try {
     const decoded = decodeURIComponent(Buffer.from(config, "base64").toString("utf-8"));
@@ -51,20 +51,36 @@ function decodeConfig(config) {
   }
 }
 
+// ==================== Manifest ====================
 app.get("/:config/manifest.json", (req, res) => {
   res.json({
     id: "org.kick.live.vod.v31",
-    version: "51.0.0",
+    version: "51.0.1",
     name: "Kick Live 🟢",
     description: "Kick Live Streams with Quality Options",
     logo: "https://kick.com/favicon.ico",
-    resources: ["catalog", "meta", "stream"],
+    resources: [
+      "catalog",
+      "meta",
+      {
+        name: "stream",
+        types: ["tv"],
+        idPrefixes: ["kick:"]
+      }
+    ],
     types: ["tv"],
-    catalogs: [{ type: "tv", id: "kick_live_cat", name: "🟢 Kick مباشر" }],
+    catalogs: [
+      {
+        type: "tv",
+        id: "kick_live_cat",
+        name: "🟢 Kick مباشر"
+      }
+    ],
     idPrefixes: ["kick:"]
   });
 });
 
+// ==================== Catalog ====================
 app.get("/:config/catalog/tv/kick_live_cat.json", (req, res) => {
   try {
     const config = decodeConfig(req.params.config);
@@ -83,6 +99,7 @@ app.get("/:config/catalog/tv/kick_live_cat.json", (req, res) => {
   }
 });
 
+// ==================== Meta ====================
 app.get("/:config/meta/tv/kick:channel.json", (req, res) => {
   const c = req.params.channel;
   res.json({
@@ -96,78 +113,91 @@ app.get("/:config/meta/tv/kick:channel.json", (req, res) => {
   });
 });
 
+// ==================== Streams ====================
 app.get("/:config/stream/tv/kick:channel.json", async (req, res) => {
   const c = req.params.channel.trim().toLowerCase();
   const streams = [];
 
-  try {
-    const headers = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-      "Accept": "application/json, text/plain, */*",
-      "Referer": "https://kick.com/",
-      "Origin": "https://kick.com"
-    };
+  const baseHeaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://kick.com/",
+    "Origin": "https://kick.com"
+  };
 
-    const apiRes = await fetch(`https://kick.com/api/v2/channels/${c}`, { headers, timeout: 8000 });
+  try {
+    const apiRes = await fetch(`https://kick.com/api/v2/channels/${c}`, {
+      headers: baseHeaders,
+      timeout: 10000
+    });
+
     if (apiRes.ok) {
       const data = await apiRes.json();
       const pb = data?.playback_url;
 
       if (pb) {
-        const m3u8Res = await fetch(pb, { headers, timeout: 8000 });
-        if (m3u8Res.ok) {
-          const masterBody = await m3u8Res.text();
-          const parser = new Parser();
-          parser.push(masterBody);
-          parser.end();
-
-          let variants = parser.manifest.playlists || [];
-          
-          variants.sort((a, b) => {
-            const resA = a.attributes?.RESOLUTION?.height || 0;
-            const resB = b.attributes?.RESOLUTION?.height || 0;
-            if (resB !== resA) return resB - resA;
-            return (b.attributes?.BANDWIDTH || 0) - (a.attributes?.BANDWIDTH || 0);
-          });
-
-          streams.push({
-            name: "🟢 Kick | Auto",
-            title: `Live: ${c.toUpperCase()}`,
-            url: pb,
-            behaviorHints: {
-              notWebReady: true,
-              proxyHeaders: {
-                request: {
-                  "User-Agent": "Mozilla/5.0",
-                  "Referer": "https://kick.com/",
-                  "Origin": "https://kick.com"
-                }
+        // إضافة خيار Auto أولاً
+        streams.push({
+          name: "🟢 Kick | Auto",
+          title: `📺 Live: ${c.toUpperCase()}`,
+          url: pb,
+          behaviorHints: {
+            notWebReady: true,
+            proxyHeaders: {
+              request: {
+                "User-Agent": baseHeaders["User-Agent"],
+                "Referer": "https://kick.com/",
+                "Origin": "https://kick.com"
               }
             }
-          });
+          }
+        });
 
-          variants.forEach((v) => {
-            const attrs = v.attributes || {};
-            const height = attrs.RESOLUTION ? `${attrs.RESOLUTION.height}p` : "Quality";
-            const bandwidth = attrs.BANDWIDTH ? `${Math.round(attrs.BANDWIDTH / 1000)} kbps` : "";
-            const streamUrl = v.uri ? new URL(v.uri, pb).href : pb;
+        // جلب الجودات من ملف m3u8
+        try {
+          const m3u8Res = await fetch(pb, { headers: baseHeaders, timeout: 10000 });
+          if (m3u8Res.ok) {
+            const masterBody = await m3u8Res.text();
+            const parser = new Parser();
+            parser.push(masterBody);
+            parser.end();
 
-            streams.push({
-              name: `🟢 Kick | ${height}`,
-              title: bandwidth ? `📊 ${bandwidth} | Live` : "Live",
-              url: streamUrl,
-              behaviorHints: {
-                notWebReady: true,
-                proxyHeaders: {
-                  request: {
-                    "User-Agent": "Mozilla/5.0",
-                    "Referer": "https://kick.com/",
-                    "Origin": "https://kick.com"
+            const variants = parser.manifest.playlists || [];
+
+            // ترتيب من الأعلى إلى الأقل
+            variants.sort((a, b) => {
+              const resA = a.attributes?.RESOLUTION?.height || 0;
+              const resB = b.attributes?.RESOLUTION?.height || 0;
+              if (resB !== resA) return resB - resA;
+              return (b.attributes?.BANDWIDTH || 0) - (a.attributes?.BANDWIDTH || 0);
+            });
+
+            variants.forEach((v) => {
+              const attrs = v.attributes || {};
+              const height = attrs.RESOLUTION ? `${attrs.RESOLUTION.height}p` : "Quality";
+              const bandwidth = attrs.BANDWIDTH ? `${Math.round(attrs.BANDWIDTH / 1000)} kbps` : "";
+              const streamUrl = v.uri ? new URL(v.uri, pb).href : pb;
+
+              streams.push({
+                name: `🟢 Kick | ${height}`,
+                title: bandwidth ? `📊 ${bandwidth} | Live: ${c.toUpperCase()}` : `Live: ${c.toUpperCase()}`,
+                url: streamUrl,
+                behaviorHints: {
+                  notWebReady: true,
+                  proxyHeaders: {
+                    request: {
+                      "User-Agent": baseHeaders["User-Agent"],
+                      "Referer": "https://kick.com/",
+                      "Origin": "https://kick.com"
+                    }
                   }
                 }
-              }
+              });
             });
-          });
+          }
+        } catch (m3u8Err) {
+          console.error("M3U8 fetch error:", m3u8Err.message);
         }
       }
     }
@@ -178,6 +208,7 @@ app.get("/:config/stream/tv/kick:channel.json", async (req, res) => {
   res.json({ streams });
 });
 
+// ==================== تشغيل الخادم ====================
 app.listen(PORT, () => {
   console.log(`🟢 Kick Addon running on port ${PORT}`);
 });
