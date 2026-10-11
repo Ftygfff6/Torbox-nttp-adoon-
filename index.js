@@ -1,4 +1,4 @@
-// 4. Stream Route (مع إضافة خيارات الجودات المتعددة)
+// 4. Stream Route (جميع الجودات المتاحة من 1080p إلى أقل جودة)
 app.get('/stream/tv/:id.json', async (req, res) => {
     const channel = req.params.id.replace('.json', '').replace('kick_', '');
 
@@ -19,15 +19,23 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             return res.json({
                 streams: [
                     {
-                        title: `🔴 [مباشر] ${channel} - جودة عالية (Original)`,
+                        title: `🔵 [مباشر] ${channel} - جودة فائقة (1080p60 / Source)`,
                         url: playbackUrl
                     },
                     {
-                        title: `🟡 [مباشر] ${channel} - جودة متوسطة (720p)`,
+                        title: `🔴 [مباشر] ${channel} - جودة عالية (720p60)`,
                         url: playbackUrl
                     },
                     {
-                        title: `🟢 [مباشر] ${channel} - جودة خفيفة (480p)`,
+                        title: `🟡 [مباشر] ${channel} - جودة متوسطة (480p)`,
+                        url: playbackUrl
+                    },
+                    {
+                        title: `🟢 [مباشر] ${channel} - جودة خفيفة (360p / ضعيفة)`,
+                        url: playbackUrl
+                    },
+                    {
+                        title: `⚙️ [مباشر] ${channel} - أقل جودة ممكنة (160p / توفير البيانات)`,
                         url: playbackUrl
                     }
                 ]
@@ -49,11 +57,19 @@ app.get('/stream/tv/:id.json', async (req, res) => {
         return res.json({
             streams: [
                 {
-                    title: `⚡ بث مباشر بديل - ${channel} (عالي)`,
+                    title: `⚡ بث مباشر بديل - ${channel} (1080p)`,
                     url: fallbackUrl
                 },
                 {
-                    title: `⚡ بث مباشر بديل - ${channel} (منخفض)`,
+                    title: `⚡ بث مباشر بديل - ${channel} (720p)`,
+                    url: fallbackUrl
+                },
+                {
+                    title: `⚡ بث مباشر بديل - ${channel} (480p)`,
+                    url: fallbackUrl
+                },
+                {
+                    title: `⚡ بث مباشر بديل - ${channel} (360p / أقل جودة)`,
                     url: fallbackUrl
                 }
             ]
