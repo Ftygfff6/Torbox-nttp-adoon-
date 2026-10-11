@@ -8,42 +8,38 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 7000;
 
-// صفحة الإعدادات المستقرة
-app.get("/", (req, res) => {
-  res.send(`
-  <!DOCTYPE html>
-  <html lang="ar" dir="rtl">
-  <head>
-    <meta charset="UTF-8">
-    <title>Kick Pro Live Addon</title>
-  </head>
-  <body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">
-    <h2>🟢 إعدادات إضافة Kick للبث المباشر</h2>
-    <p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>
-    <textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;border:1px solid #53fc18;border-radius:6px;"></textarea><br><br>
-    <button onclick="ins()" style="padding:10px 20px;background:#53fc18;color:#000;border:none;font-weight:bold;cursor:pointer;border-radius:6px;">تثبيت في التطبيق</button>
-    <script>
-      function ins() {
-        var v = document.getElementById('ch').value.trim();
-        if(!v) { return alert('أدخل قناة!'); }
-        var list = v.split(/[,\\s\\n]+/).map(function(c){ return c.trim().toLowerCase(); }).filter(Boolean).join(',');
-        var encoded = btoa(encodeURIComponent(list));
-        window.location.href = 'stremio://' + window.location.host + '/' + encoded + '/manifest.json';
-      }
-    </script>
-  </body>
-  </html>
-  `);
+app.get("/", function(req, res) {
+  res.send(
+    '<!DOCTYPE html>' +
+    '<html lang="ar" dir="rtl">' +
+    '<head><meta charset="UTF-8"><title>Kick Pro Live</title></head>' +
+    '<body style="background:#0b0e0f;color:#fff;font-family:sans-serif;text-align:center;padding-top:50px;">' +
+    '<h2>🟢 إعدادات إضافة Kick للبث المباشر</h2>' +
+    '<p>أدخل أسماء قنوات Kick (مفصولة بفواصل):</p>' +
+    '<textarea id="ch" style="width:300px;height:80px;background:#151a1c;color:#53fc18;padding:10px;border:1px solid #53fc18;border-radius:6px;"></textarea><br><br>' +
+    '<button onclick="ins()" style="padding:10px 20px;background:#53fc18;color:#000;border:none;font-weight:bold;cursor:pointer;border-radius:6px;">تثبيت في التطبيق</button>' +
+    '<script>' +
+    'function ins() {' +
+    '  var v = document.getElementById("ch").value.trim();' +
+    '  if(!v) { return alert("أدخل قناة!"); }' +
+    '  var list = v.split(/[,\\s\\n]+/).map(function(c){ return c.trim().toLowerCase(); }).filter(Boolean).join(",");' +
+    '  var encoded = btoa(encodeURIComponent(list));' +
+    '  window.location.href = "stremio://" + window.location.host + "/" + encoded + "/manifest.json";' +
+    '}' +
+    '</script>' +
+    '</body>' +
+    '</html>'
+  );
 });
 
-app.get("/configure", (req, res) => {
+app.get("/configure", function(req, res) {
   res.redirect("/");
 });
 
-app.get("/:config/manifest.json", (req, res) => {
+app.get("/:config/manifest.json", function(req, res) {
   res.json({
     id: "org.kick.pro.live",
-    version: "19.0.0",
+    version: "20.0.0",
     name: "Kick Pro Live",
     description: "البث المباشر لقنوات Kick بأعلى جودة واستقرار",
     resources: ["catalog", "meta", "stream"],
@@ -53,69 +49,68 @@ app.get("/:config/manifest.json", (req, res) => {
   });
 });
 
-app.get("/:config/catalog/tv/kick_live_cat.json", (req, res) => {
+app.get("/:config/catalog/tv/kick_live_cat.json", function(req, res) {
   try {
-    const channels = decodeURIComponent(Buffer.from(req.params.config, 'base64').toString('utf-8')).split(',');
-    res.json({
-      metas: channels.map(c => ({
-        id: `kick:${c}`,
+    var channels = decodeURIComponent(Buffer.from(req.params.config, "base64").toString("utf-8")).split(",");
+    var metas = channels.map(function(c) {
+      return {
+        id: "kick:" + c,
         type: "tv",
-        name: `Kick: ${c.toUpperCase()}`,
-        poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
-        description: `بث مباشر حصري لقناة ${c.toUpperCase()} بجودات متعددة واستقرار تام.`
-      }))
+        name: "Kick: " + c.toUpperCase(),
+        poster: "https://ui-avatars.com/api/?name=" + c + "&background=0B0E0F&color=53FC18&size=512",
+        description: "بث مباشر حصري لقناة " + c.toUpperCase() + " بجودات متعددة واستقرار تام."
+      };
     });
+    res.json({ metas: metas });
   } catch(e) {
     res.json({ metas: [] });
   }
 });
 
-app.get("/:config/meta/tv/:id.json", (req, res) => {
-  const c = req.params.id.replace("kick:", "");
+app.get("/:config/meta/tv/:id.json", function(req, res) {
+  var c = req.params.id.replace("kick:", "");
   res.json({
     meta: {
-      id: `kick:${c}`,
+      id: "kick:" + c,
       type: "tv",
-      name: `Kick: ${c.toUpperCase()}`,
-      poster: `https://ui-avatars.com/api/?name=${c}&background=0B0E0F&color=53FC18&size=512`,
+      name: "Kick: " + c.toUpperCase(),
+      poster: "https://ui-avatars.com/api/?name=" + c + "&background=0B0E0F&color=53FC18&size=512",
       description: "اختر الجودة المناسبة لمشاهدة البث المباشر بدون تقطيع."
     }
   });
 });
 
-app.get("/:config/stream/tv/:id.json", async (req, res) => {
-  const c = req.params.id.replace("kick:", "").trim();
-  const streams = [];
+app.get("/:config/stream/tv/:id.json", async function(req, res) {
+  var c = req.params.id.replace("kick:", "").trim();
+  var streams = [];
 
   try {
-    const r = await axios.get(`https://kick.com/api/v2/channels/${c}`, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
-    const pb = r.data?.playback_url;
+    var r = await axios.get("https://kick.com/api/v2/channels/" + c, { headers: { "User-Agent": "Mozilla/5.0" }, timeout: 5000 });
+    var pb = r.data && r.data.playback_url;
     
-    if (!pb) return res.json({ streams: [] });
+    if (!pb) { return res.json({ streams: [] }); }
 
-    // 1. الخيار التلقائي السريع
     streams.push({ 
       name: "🟢 [KICK AUTO]", 
-      title: `قناة: ${c.toUpperCase()} | البث المباشر (تلقائي)`, 
+      title: "قناة: " + c.toUpperCase() + " | البث المباشر (تلقائي)", 
       url: pb 
     });
 
-    // 2. استخراج الجودات المتاحة
     try {
-      const pRes = await axios.get(pb, { timeout: 3000 });
-      const lines = pRes.data.split("\n");
-      const base = pb.substring(0, pb.lastIndexOf("/") + 1);
+      var pRes = await axios.get(pb, { timeout: 3000 });
+      var lines = pRes.data.split("\n");
+      var base = pb.substring(0, pb.lastIndexOf("/") + 1);
       
-      lines.forEach((l, i) => {
-        if (l.startsWith("#EXT-X-STREAM-INF:")) {
-          const resM = l.match(/RESOLUTION=(\d+x\d+)/);
-          const h = resM ? resM[1].split("x")[1] : "HD";
-          let u = lines[i+1]?.trim();
-          if (u && !u.startsWith("http")) u = base + u;
+      lines.forEach(function(l, i) {
+        if (l.indexOf("#EXT-X-STREAM-INF:") === 0) {
+          var resM = l.match(/RESOLUTION=(\d+x\d+)/);
+          var h = resM ? resM[1].split("x")[1] : "HD";
+          var u = lines[i+1] ? lines[i+1].trim() : "";
+          if (u && u.indexOf("http") !== 0) { u = base + u; }
           if (u) {
             streams.push({ 
-              name: `🟢 [${h}p]`, 
-              title: `بث مباشر - جودة ${h}p | قناة: ${c.toUpperCase()}`, 
+              name: "🟢 [" + h + "p]", 
+              title: "بث مباشر - جودة " + h + "p | قناة: " + c.toUpperCase(), 
               url: u 
             });
           }
@@ -123,7 +118,7 @@ app.get("/:config/stream/tv/:id.json", async (req, res) => {
       });
     } catch(err) {}
 
-    res.json({ streams });
+    res.json({ streams: });
   } catch(e) {
     res.json({ streams: [] });
   }
