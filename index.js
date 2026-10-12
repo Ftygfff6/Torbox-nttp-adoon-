@@ -15,8 +15,8 @@ const CHANNELS = [
     { id: "ko3ib", name: "ko3ib" },
     { id: "LLE", name: "LLE" },
     { id: "ibrahim_dos", name: "ibrahim_dos" },
-    { id: "Aziz", name: "Aziz" }
- { id: "Abo_Fawzi18", name: "Abo_Fawzi18" }
+    { id: "Aziz", name: "Aziz" },
+    { id: "Abo_Fawzi18", name: "Abo_Fawzi18" }
 ];
 
 app.get('/manifest.json', (req, res) => {
