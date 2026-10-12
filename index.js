@@ -73,7 +73,7 @@ app.get('/stream/tv/:id.json', async (req, res) => {
                 'Accept': 'application/json, text/plain, */*',
                 'Referer': `https://kick.com/${channel}`
             },
-            timeout: 6000
+            timeout: 5000
         });
 
         const playbackUrl = response.data?.playback_url;
@@ -83,20 +83,20 @@ app.get('/stream/tv/:id.json', async (req, res) => {
             return res.json({
                 streams: [
                     {
-                        title: `🔵 [مباشر] ${channel} - جودة فائقة (1080p)`,
-                        url: playbackUrl
+                        title: `🔵 [1080p60 - ثابت بدون تقطيع] ${channel}`,
+                        url: playbackUrl,
+                        behaviorHints: {
+                            notSupportedInVideoTag: false,
+                            isLive: true
+                        }
                     },
                     {
-                        title: `🔴 [مباشر] ${channel} - جودة عالية (720p)`,
-                        url: playbackUrl
-                    },
-                    {
-                        title: `🟡 [مباشر] ${channel} - جودة متوسطة (480p)`,
-                        url: playbackUrl
-                    },
-                    {
-                        title: `🟢 [مباشر] ${channel} - أقل جودة (360p / توفير البيانات)`,
-                        url: playbackUrl
+                        title: `⚡ [1080p - سيرفر سريع مباشر] ${channel}`,
+                        url: `https://stream.kick.com/livestream/${channel}/index.m3u8`,
+                        behaviorHints: {
+                            notSupportedInVideoTag: false,
+                            isLive: true
+                        }
                     }
                 ]
             });
@@ -117,20 +117,12 @@ app.get('/stream/tv/:id.json', async (req, res) => {
         return res.json({
             streams: [
                 {
-                    title: `⚡ بث بديل - ${channel} (1080p)`,
-                    url: fallbackUrl
-                },
-                {
-                    title: `⚡ بث بديل - ${channel} (720p)`,
-                    url: fallbackUrl
-                },
-                {
-                    title: `⚡ بث بديل - ${channel} (480p)`,
-                    url: fallbackUrl
-                },
-                {
-                    title: `⚡ بث بديل - ${channel} (360p)`,
-                    url: fallbackUrl
+                    title: `⚡ [1080p - بث مباشر مباشر] ${channel}`,
+                    url: fallbackUrl,
+                    behaviorHints: {
+                        notSupportedInVideoTag: false,
+                        isLive: true
+                    }
                 }
             ]
         });
